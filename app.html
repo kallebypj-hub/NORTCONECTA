@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>NortConecta</title>
+  <title>REVVO</title>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -61,7 +61,7 @@ const fmtPlaca = (v) => v.replace(/[^A-Z0-9]/gi,'').toUpperCase().slice(0,7);
 // ══════════════════════════════════════════════════════════════
 // CPFs calculados com algoritmo real para as contas demo
 const DEMO_ACCOUNTS = [
-  { id:1, nome:'Carlos Admin',  cpf:'529.982.247-25', email:'admin@nortconecta.com', senha:'123456', tel:'(88) 99000-0001', codConc:'ADMIN', perfil:'super_admin', conc:null        },
+  { id:1, nome:'Carlos Admin',  cpf:'529.982.247-25', email:'admin@revvo.com', senha:'123456', tel:'(88) 99000-0001', codConc:'ADMIN', perfil:'super_admin', conc:null        },
   { id:2, nome:'Ana Lima',      cpf:'111.444.777-35', email:'ana@nortmotos.com',      senha:'123456', tel:'(88) 99000-0002', codConc:'1614410', perfil:'gerente',     conc:'NortMotos' },
   { id:3, nome:'Lucas Mendes',  cpf:'263.946.533-30', email:'lucas@nortmotos.com',    senha:'123456', tel:'(88) 99000-0003', codConc:'1614410', perfil:'vendedor',    conc:'NortMotos' },
   { id:4, nome:'Rafael Souza',  cpf:'801.382.872-04', email:'rafael@nortmotos.com',   senha:'123456', tel:'(88) 99000-0004', codConc:'1614410', perfil:'vendedor',    conc:'NortMotos' },
@@ -183,8 +183,8 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-[#f97316] rounded-2xl flex items-center justify-center text-3xl mx-auto mb-3 shadow-lg">⚡</div>
-          <h1 className="text-3xl font-black text-white tracking-tight">NortConecta</h1>
-          <p className="text-blue-300 text-sm mt-1">Intermediação de Veículos Seminovos</p>
+          <h1 className="text-3xl font-black text-white tracking-tight">REVVO</h1>
+          <p className="text-blue-300 text-sm mt-1">Sua moto. Seu preço. Sem complicação.</p>
         </div>
 
         <div className="bg-white rounded-3xl shadow-2xl p-8">
@@ -245,7 +245,7 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
         {/* Demo hint */}
         <div className="mt-4 bg-white/10 rounded-2xl p-4 text-xs text-blue-200">
           <p className="font-bold text-white mb-2">Contas demo disponíveis:</p>
-          {[['Lucas (Vendedor)','lucas@nortmotos.com','123456'],['Ana (Gerente)','ana@nortmotos.com','123456'],['Admin','admin@nortconecta.com','123456'],['Rafael (Vendedor)','rafael@nortmotos.com','123456']].map(([n,e,s])=>(
+          {[['Lucas (Vendedor)','lucas@nortmotos.com','123456'],['Ana (Gerente)','ana@nortmotos.com','123456'],['Admin','admin@revvo.com','123456'],['Rafael (Vendedor)','rafael@nortmotos.com','123456']].map(([n,e,s])=>(
             <button key={e} onClick={()=>{setEmail(e);setSenha(s);}} className="block w-full text-left py-1 hover:text-white transition-colors">
               <span className="text-blue-300">{n}:</span> {e} / {s}
             </button>
@@ -322,7 +322,7 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
       <div className="w-full max-w-sm">
         <div className="text-center mb-6">
           <div className="w-14 h-14 bg-[#f97316] rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3 shadow-lg">⚡</div>
-          <h1 className="text-2xl font-black text-white">NortConecta</h1>
+          <h1 className="text-2xl font-black text-white">REVVO</h1>
         </div>
         <div className="bg-white rounded-3xl shadow-2xl p-7">
           <div className="flex items-center gap-2 mb-5">
@@ -380,7 +380,7 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
               <input type="checkbox" checked={marketing} onChange={e=>setMarketing(e.target.checked)}
                 className="mt-0.5 w-4 h-4 accent-[#f97316] flex-shrink-0" />
               <span className="text-sm text-gray-600 leading-snug">
-                Quero receber ofertas e novidades do NortConecta
+                Quero receber ofertas e novidades do REVVO
               </span>
             </label>
             <button type="submit" className="w-full bg-[#f97316] text-white py-3.5 rounded-2xl font-bold hover:bg-orange-600 transition-colors mt-1">
@@ -596,7 +596,7 @@ const ContratoModal = ({ m, tipo, onClose, onOk }) => {
             {tipo==='intermediacao' && <>
               <p><strong>PROPRIETÁRIO:</strong> {m.prop.nome}, CPF {m.prop.cpf}.</p>
               <p><strong>VALOR DESEJADO:</strong> {R(m.pd)}, revertido como crédito na concessionária parceira.</p>
-              <p><strong>INTERMEDIAÇÃO:</strong> A NortConecta atua exclusivamente como intermediária. O proprietário responde por vícios ocultos.</p>
+              <p><strong>INTERMEDIAÇÃO:</strong> A REVVO atua exclusivamente como intermediária. O proprietário responde por vícios ocultos.</p>
               <p><strong>BÔNUS DE CAPTAÇÃO:</strong> {R(m.bonus)} ao vendedor captador, incluído no preço ao comprador.</p>
               <p><strong>CONFIDENCIALIDADE:</strong> As partes mantêm sigilo sobre os termos desta operação.</p>
             </>}
@@ -607,7 +607,7 @@ const ContratoModal = ({ m, tipo, onClose, onOk }) => {
               <p><strong>TRANSFERÊNCIA:</strong> Prazo de 30 dias para transferência no DETRAN.</p>
             </>}
             {tipo==='honorarios' && <>
-              <p><strong>HONORÁRIOS:</strong> A NortConecta recebeu {R(m.lucroApp+m.comissaoVenda)} pela intermediação.</p>
+              <p><strong>HONORÁRIOS:</strong> A REVVO recebeu {R(m.lucroApp+m.comissaoVenda)} pela intermediação.</p>
               <p><strong>NATUREZA:</strong> Valor de serviço de intermediação, não integra o preço do veículo.</p>
               <p>Data: {new Date().toLocaleDateString('pt-BR')}.</p>
             </>}
@@ -1278,7 +1278,7 @@ const App = () => {
 
   if (authState==='loading') return (
     <div className="min-h-screen bg-[#1e3a5f] flex items-center justify-center">
-      <div className="text-center text-white"><div className="text-5xl mb-3">⚡</div><p className="font-bold text-xl">NortConecta</p></div>
+      <div className="text-center text-white"><div className="text-5xl mb-3">⚡</div><p className="font-bold text-xl">REVVO</p></div>
     </div>
   );
   if (authState==='login')    return <LoginPage onLogin={handleLogin} onGoRegister={()=>{setGoogleData(null);setAuth('register');}} onGoRegisterGoogle={goRegisterGoogle} />;
@@ -1299,7 +1299,7 @@ const App = () => {
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5 flex-shrink-0">
             <div className="w-9 h-9 bg-[#f97316] rounded-xl flex items-center justify-center text-lg font-bold text-white shadow">⚡</div>
-            <div><p className="font-black text-white text-lg leading-none">NortConecta</p><p className="text-blue-300 text-xs">Intermediação de Veículos</p></div>
+            <div><p className="font-black text-white text-lg leading-none">REVVO</p><p className="text-blue-300 text-xs">Sua moto. Seu preço.</p></div>
           </div>
           <nav className="hidden md:flex gap-1 flex-1 justify-center">
             {NAV.map(n=>(
