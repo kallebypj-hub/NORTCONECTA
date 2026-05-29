@@ -1,7 +1,1407 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-<!-- REVVO app redirect -->
-<meta http-equiv="refresh" content="0; url=app.html">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>REVVO</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>tailwind.config={theme:{extend:{colors:{primary:'#080f1e',secondary:'#f97316'}}}}</script>
+  <!-- Google Identity Services — substituir GOOGLE_CLIENT_ID quando tiver o Client ID -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Favicon: letra R com slash laranja -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23080f1e'/%3E%3Ctext x='3' y='25' font-family='Arial Black,sans-serif' font-size='22' font-weight='900' fill='white'%3ER%3C/text%3E%3Cline x1='10' y1='5' x2='20' y2='27' stroke='%23f97316' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <style>
+    *{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;}
+    .sig-pad{touch-action:none;cursor:crosshair;}
+    ::-webkit-scrollbar{width:6px;height:6px;}
+    ::-webkit-scrollbar-track{background:#f1f5f9;}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
+    @keyframes revvoFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes revvoFadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes splashOut{0%,70%{opacity:1}100%{opacity:0;pointer-events:none}}
+    .revvo-fade-up{animation:revvoFadeUp .7s cubic-bezier(.22,1,.36,1) forwards;}
+    .revvo-fade-in{animation:revvoFadeIn .5s ease forwards;}
+    .splash-out{animation:splashOut 2s ease forwards;}
+    .revvo-delay-1{animation-delay:.15s;opacity:0;}
+    .revvo-delay-2{animation-delay:.3s;opacity:0;}
+    .revvo-delay-3{animation-delay:.45s;opacity:0;}
+  </style>
 </head>
+<body class="bg-slate-50">
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+// ── Componente de logo reutilizável ──────────────────────────
+const RevvoLogo = ({ size='md', showSlogan=false }) => {
+  const sz = { xs:'text-xl', sm:'text-2xl', md:'text-3xl', lg:'text-5xl', xl:'text-7xl', '2xl':'text-8xl' }[size]||'text-3xl';
+  const slSz = { xs:'text-sm', sm:'text-base', md:'text-lg', lg:'text-2xl', xl:'text-4xl', '2xl':'text-5xl' }[size]||'text-lg';
+  return (
+    <div className="inline-flex flex-col items-center gap-0">
+      <div className={`font-black tracking-tighter text-white leading-none select-none ${sz}`}>
+        <span className="relative inline-block">
+          R
+          <span className={`absolute inset-0 flex items-center justify-center text-[#f97316] font-light pointer-events-none ${slSz}`}
+            style={{transform:'rotate(15deg) translateX(2px)',fontWeight:200,lineHeight:1}}>
+            /
+          </span>
+        </span>
+        EVVO<span className="text-[#f97316]" style={{marginLeft:'1px'}}>.</span>
+      </div>
+      {showSlogan && (
+        <div className="mt-2">
+          <div className="h-px bg-[#f97316] opacity-80 w-full" />
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 2 — Validação de CPF (algoritmo real)
+// ══════════════════════════════════════════════════════════════
+const validarCPF = (cpf) => {
+  const c = cpf.replace(/\D/g,'');
+  if (c.length !== 11 || /^(\d)\1+$/.test(c)) return false;
+  const dig = (n) => {
+    let s = 0;
+    for (let i=0;i<n;i++) s += parseInt(c[i])*(n+1-i);
+    const r = (s*10)%11;
+    return r>=10 ? 0 : r;
+  };
+  return dig(9)===parseInt(c[9]) && dig(10)===parseInt(c[10]);
+};
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 3 — Validação de placa brasileira (antiga + Mercosul)
+// ══════════════════════════════════════════════════════════════
+const validarPlaca = (p) => {
+  const s = p.replace(/[^A-Z0-9]/gi,'').toUpperCase();
+  return /^[A-Z]{3}\d{4}$/.test(s) || /^[A-Z]{3}\d[A-Z]\d{2}$/.test(s);
+};
+
+const fmtCPF = (v) => {
+  const d = v.replace(/\D/g,'').slice(0,11);
+  if (d.length<=3) return d;
+  if (d.length<=6) return `${d.slice(0,3)}.${d.slice(3)}`;
+  if (d.length<=9) return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6)}`;
+  return `${d.slice(0,3)}.${d.slice(3,6)}.${d.slice(6,9)}-${d.slice(9)}`;
+};
+const fmtPlaca = (v) => v.replace(/[^A-Z0-9]/gi,'').toUpperCase().slice(0,7);
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 1 — Auth via localStorage
+// ══════════════════════════════════════════════════════════════
+// CPFs calculados com algoritmo real para as contas demo
+const DEMO_ACCOUNTS = [
+  { id:1, nome:'Carlos Admin',  cpf:'529.982.247-25', email:'admin@revvo.com', senha:'123456', tel:'(88) 99000-0001', codConc:'ADMIN', perfil:'super_admin', conc:null        },
+  { id:2, nome:'Ana Lima',      cpf:'111.444.777-35', email:'ana@nortmotos.com',      senha:'123456', tel:'(88) 99000-0002', codConc:'1614410', perfil:'gerente',     conc:'NortMotos' },
+  { id:3, nome:'Lucas Mendes',  cpf:'263.946.533-30', email:'lucas@nortmotos.com',    senha:'123456', tel:'(88) 99000-0003', codConc:'1614410', perfil:'vendedor',    conc:'NortMotos' },
+  { id:4, nome:'Rafael Souza',  cpf:'801.382.872-04', email:'rafael@nortmotos.com',   senha:'123456', tel:'(88) 99000-0004', codConc:'1614410', perfil:'vendedor',    conc:'NortMotos' },
+];
+
+const CONC_CODES = {
+  '1614410': { nome:'NortMotos', cidade:'Sobral', uf:'CE', perfil:'vendedor' },
+  'ADMIN':   { nome:null,        perfil:'super_admin' },
+};
+
+// ── Google OAuth ─────────────────────────────────────────────
+// Substitua pela string do seu Client ID quando estiver configurado.
+// Ex: '123456789-abc.apps.googleusercontent.com'
+const GOOGLE_CLIENT_ID = '160346880965-0hhsmktfs3b8qdg0r5a88osrd48nk6sb.apps.googleusercontent.com';
+
+const decodeJWT = (token) => {
+  try { return JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))); }
+  catch { return null; }
+};
+
+const LS = {
+  getUsers   : () => { try { return JSON.parse(localStorage.getItem('nc_users')) || null; } catch { return null; } },
+  saveUsers  : (u) => { try { localStorage.setItem('nc_users', JSON.stringify(u)); } catch {} },
+  getSession : () => { try { return JSON.parse(localStorage.getItem('nc_session')); } catch { return null; } },
+  saveSession: (u) => { try { localStorage.setItem('nc_session', JSON.stringify(u)); } catch {} },
+  clearSession:()  => { try { localStorage.removeItem('nc_session'); } catch {} },
+  getMotos   : () => { try { return JSON.parse(localStorage.getItem('nc_motos')) || null; } catch { return null; } },
+  saveMotos  : (m) => { try { localStorage.setItem('nc_motos', JSON.stringify(m)); } catch {} },
+  getConcs   : () => { try { return JSON.parse(localStorage.getItem('nc_concs')) || null; } catch { return null; } },
+  saveConcs  : (c) => { try { localStorage.setItem('nc_concs', JSON.stringify(c)); } catch {} },
+};
+
+// ── Pricing ─────────────────────────────────────────────────
+const calc = (pd) => {
+  const p = parseFloat(pd)||0;
+  const bonus=200, onze=p*0.11, final=p+bonus+onze, comVenda=final*0.01, lucroApp=onze-comVenda;
+  return { precoFinal:final, bonus, onzePct:onze, comissaoVenda:comVenda, lucroApp };
+};
+const R = (v) => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+
+// ── Initial data ─────────────────────────────────────────────
+const MOTOS0 = [
+  { id:1, prop:{nome:'João Silva',     cpf:'529.982.247-25',fone:'(88) 99812-3456'},
+    vei:{marca:'Honda',  modelo:'Fan 160',     ano:2022,placa:'QRS4521',renavam:'12345678901',km:18000},
+    obs:'Bom estado. Sem arranhões. Pneus 80% de vida. Revisões em dia.',
+    laudo:{pneus:'Bom',relacao:'Bom',pintura:'Bom',motor:'Bom'},
+    fotos:[null,null,null,null], pd:14000, ...calc(14000),
+    status:'disponivel', capId:3,cap:'Lucas Mendes',vendId:null,vend:null,comprador:null,conc:'NortMotos',data:'2024-01-15' },
+  { id:2, prop:{nome:'Maria Santos',   cpf:'111.444.777-35',fone:'(88) 99987-6543'},
+    vei:{marca:'Yamaha', modelo:'Factor 150',  ano:2021,placa:'MNO7832',renavam:'98765432101',km:24000},
+    obs:'Estado regular. Arranhões no tanque. Motor ok.',
+    laudo:{pneus:'Bom',relacao:'Bom',pintura:'Bom',motor:'Bom'},
+    fotos:[null,null,null,null], pd:11500, ...calc(11500),
+    status:'em_negociacao', capId:3,cap:'Lucas Mendes',vendId:4,vend:'Rafael Souza',
+    comprador:{nome:'Pedro Alves',cpf:'263.946.533-30',fone:'(88) 99111-2222'},conc:'NortMotos',data:'2024-01-10' },
+  { id:3, prop:{nome:'Carlos Ferreira',cpf:'801.382.872-04',fone:'(88) 99456-7890'},
+    vei:{marca:'Honda',  modelo:'CG Titan 160',ano:2023,placa:'ABC1D23',renavam:'45678912301',km:9000},
+    obs:'Excelente estado. Único dono. Revisões na concessionária.',
+    laudo:{pneus:'Bom',relacao:'Bom',pintura:'Bom',motor:'Bom'},
+    fotos:[null,null,null,null], pd:16000, ...calc(16000),
+    status:'concluido', capId:4,cap:'Rafael Souza',vendId:3,vend:'Lucas Mendes',
+    comprador:{nome:'Ana Costa',cpf:'529.982.247-25',fone:'(88) 99555-6666'},conc:'NortMotos',data:'2024-01-05' },
+];
+const CONCS0 = [{ id:1, nome:'NortMotos', cidade:'Sobral', uf:'CE', ativa:true }];
+
+const ST_LABEL = { disponivel:'Disponível', em_negociacao:'Em Negociação', aguardando_assinatura:'Aguard. Assinatura', concluido:'Concluído' };
+const ST_CLS   = { disponivel:'bg-emerald-100 text-emerald-800', em_negociacao:'bg-amber-100 text-amber-800', aguardando_assinatura:'bg-blue-100 text-blue-800', concluido:'bg-slate-100 text-slate-600' };
+const PERFIL   = { super_admin:'Super Admin', gerente:'Gerente', vendedor:'Vendedor' };
+const Badge = ({s}) => <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ST_CLS[s]}`}>{ST_LABEL[s]}</span>;
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 1 — Tela de Login
+// ══════════════════════════════════════════════════════════════
+const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
+  const [email,setEmail]   = useState('');
+  const [senha,setSenha]   = useState('');
+  const [err,setErr]       = useState('');
+  const [loading,setLoad]  = useState(false);
+  const [showPass,setShow] = useState(false);
+
+  const handle = (e) => {
+    e.preventDefault(); setErr(''); setLoad(true);
+    setTimeout(() => {
+      const users = LS.getUsers() || DEMO_ACCOUNTS;
+      const u = users.find(x => x.email.toLowerCase()===email.toLowerCase() && x.senha===senha);
+      if (u) { LS.saveSession(u); onLogin(u); }
+      else setErr('E-mail ou senha incorretos.');
+      setLoad(false);
+    }, 400);
+  };
+
+  // Callback chamado pelo Google após autenticação
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !window.google) return;
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (res) => {
+        const payload = decodeJWT(res.credential);
+        if (!payload) { setErr('Erro ao autenticar com Google.'); return; }
+        const users = LS.getUsers() || DEMO_ACCOUNTS;
+        const existing = users.find(u => u.email.toLowerCase() === payload.email.toLowerCase());
+        if (existing) {
+          LS.saveSession(existing); onLogin(existing);
+        } else {
+          // Novo usuário Google → vai para cadastro com dados pré-preenchidos
+          onGoRegisterGoogle({ nome: payload.name, email: payload.email, googleId: payload.sub });
+        }
+      },
+    });
+    window.google.accounts.id.renderButton(
+      document.getElementById('google-btn'),
+      { theme:'outline', size:'large', width:'100%', text:'signin_with', shape:'pill', locale:'pt-BR' }
+    );
+  }, []);
+
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{background:'#080f1e'}}>
+      <div className="w-full max-w-sm">
+        {/* Logo hero */}
+        <div className="text-center mb-10 revvo-fade-up">
+          <RevvoLogo size="xl" />
+          <div className="h-px bg-[#f97316] mx-auto mt-4 mb-4" style={{width:'100px',opacity:.9}} />
+          <p className="text-xs tracking-[0.28em] uppercase text-gray-500">
+            Intermediação de Veículos Seminovos
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl shadow-2xl p-8 revvo-fade-up revvo-delay-1">
+          <h2 className="text-xl font-bold text-[#080f1e] mb-6">Entrar na plataforma</h2>
+
+          {/* Botão Google */}
+          {GOOGLE_CLIENT_ID ? (
+            <div className="mb-4">
+              <div id="google-btn" className="w-full flex justify-center"></div>
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-gray-200"/>
+                <span className="text-xs text-gray-400 font-medium">ou entre com e-mail</span>
+                <div className="flex-1 h-px bg-gray-200"/>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-4">
+              <button type="button" disabled title="Configure o Google Client ID para ativar"
+                className="w-full flex items-center justify-center gap-3 border border-gray-200 rounded-2xl py-3 text-sm text-gray-400 cursor-not-allowed bg-gray-50">
+                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                Entrar com Google <span className="text-xs">(configure o Client ID)</span>
+              </button>
+              <div className="flex items-center gap-3 my-4">
+                <div className="flex-1 h-px bg-gray-200"/>
+                <span className="text-xs text-gray-400 font-medium">ou entre com e-mail</span>
+                <div className="flex-1 h-px bg-gray-200"/>
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handle} className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">E-mail</label>
+              <input className="w-full mt-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#f97316] focus:ring-1 focus:ring-[#f97316]"
+                type="email" placeholder="seu@email.com" required value={email} onChange={e=>setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha</label>
+              <div className="relative mt-1">
+                <input className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#f97316] focus:ring-1 focus:ring-[#f97316] pr-12"
+                  type={showPass?'text':'password'} placeholder="••••••••" required value={senha} onChange={e=>setSenha(e.target.value)} />
+                <button type="button" onClick={()=>setShow(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{showPass?'🙈':'👁️'}</button>
+              </div>
+            </div>
+            {err && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full bg-[#f97316] text-white py-3.5 rounded-2xl font-bold text-base hover:bg-orange-600 transition-colors disabled:opacity-60 mt-2">
+              {loading ? 'Verificando...' : 'Entrar'}
+            </button>
+          </form>
+          <div className="mt-5 text-center">
+            <p className="text-sm text-gray-400">Não tem conta?{' '}
+              <button onClick={onGoRegister} className="text-[#f97316] font-semibold hover:underline">Cadastre-se</button>
+            </p>
+          </div>
+        </div>
+
+        {/* Demo hint */}
+        <div className="mt-4 rounded-2xl p-4 text-xs revvo-fade-in revvo-delay-2" style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)'}}>
+          <p className="font-bold text-white mb-2">Contas demo:</p>
+          {[['Lucas · Vendedor','lucas@nortmotos.com','123456'],['Ana · Gerente','ana@nortmotos.com','123456'],['Admin','admin@revvo.com','123456'],['Rafael · Vendedor','rafael@nortmotos.com','123456']].map(([n,e,s])=>(
+            <button key={e} onClick={()=>{setEmail(e);setSenha(s);}}
+              className="block w-full text-left py-1.5 hover:text-white transition-colors text-gray-500">
+              <span className="text-[#f97316] font-medium">{n}</span>  {e}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 1 — Tela de Cadastro de Vendedor
+// ══════════════════════════════════════════════════════════════
+const RegisterPage = ({ onBack, onRegistered, googleData }) => {
+  // Se veio do Google, pré-preenche nome e e-mail (e senha não é necessária)
+  const viaGoogle = !!googleData;
+  const [f, setF] = useState({
+    nome:    googleData?.nome  || '',
+    cpf:     '',
+    email:   googleData?.email || '',
+    senha:   viaGoogle ? '___GOOGLE___' : '',
+    tel:     '',
+    codConc: '',
+  });
+  const [marketing, setMarketing] = useState(true); // ── Melhoria 3
+  const [erros, setErros] = useState({});
+  const [ok, setOk]       = useState('');
+
+  const up = (k) => (e) => {
+    let v = e.target.value;
+    if (k==='cpf') v = fmtCPF(v);
+    setF(p=>({...p,[k]:v}));
+    setErros(p=>({...p,[k]:''}));
+  };
+  const inp = (hasErr) => `w-full border ${hasErr?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#f97316]`;
+
+  const validar = () => {
+    const e = {};
+    if (!f.nome.trim() || f.nome.trim().split(' ').length < 2) e.nome = 'Informe nome completo (nome e sobrenome).';
+    if (!validarCPF(f.cpf)) e.cpf = 'CPF inválido. Verifique os dígitos.';
+    if (!f.email.includes('@')) e.email = 'E-mail inválido.';
+    if (!viaGoogle && f.senha.length < 6) e.senha = 'Senha deve ter ao menos 6 caracteres.';
+    if (!f.tel.trim()) e.tel = 'Informe seu telefone.';
+    // ── Melhoria 2: código real 1614410, mensagem correta
+    if (!CONC_CODES[f.codConc.trim()]) e.codConc = 'Código de concessionária inválido. Entre em contato com o administrador.';
+    setErros(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handle = (e) => {
+    e.preventDefault();
+    if (!validar()) return;
+    const users = LS.getUsers() || [...DEMO_ACCOUNTS];
+    if (users.find(u => u.email.toLowerCase()===f.email.toLowerCase())) {
+      setErros(p=>({...p, email:'Este e-mail já está cadastrado.'}));
+      return;
+    }
+    const code     = f.codConc.trim();
+    const concInfo = CONC_CODES[code];
+    const novoUser = {
+      id: Date.now(), nome: f.nome.trim(), cpf: f.cpf,
+      email: f.email.toLowerCase(), senha: f.senha, tel: f.tel, codConc: code,
+      perfil: concInfo.perfil, conc: concInfo.nome || null,
+      googleId: googleData?.googleId || null,
+      marketing, // ── Melhoria 3: salva preferência de e-mail marketing
+    };
+    LS.saveUsers([...users, novoUser]);
+    setOk('Conta criada! Redirecionando...');
+    setTimeout(() => { LS.saveSession(novoUser); onRegistered(novoUser); }, 1200);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'#080f1e'}}>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-6 revvo-fade-up">
+          <RevvoLogo size="lg" />
+        </div>
+        <div className="bg-white rounded-3xl shadow-2xl p-7">
+          <div className="flex items-center gap-2 mb-5">
+            <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
+            <h2 className="text-lg font-bold text-[#080f1e]">Criar conta de vendedor</h2>
+          </div>
+          {viaGoogle && (
+            <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700">
+              <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+              Conta Google detectada. Complete o cadastro abaixo.
+            </div>
+          )}
+          {ok && <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">{ok}</div>}
+          <form onSubmit={handle} className="space-y-3">
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome completo</label>
+              <input className={inp(erros.nome)} placeholder="João da Silva" value={f.nome} onChange={up('nome')} />
+              {erros.nome && <p className="text-red-500 text-xs mt-1">{erros.nome}</p>}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">CPF</label>
+              <input className={inp(erros.cpf)} placeholder="000.000.000-00" value={f.cpf} onChange={up('cpf')} />
+              {erros.cpf && <p className="text-red-500 text-xs mt-1">{erros.cpf}</p>}
+              {f.cpf.length===14 && validarCPF(f.cpf) && <p className="text-emerald-600 text-xs mt-1">✓ CPF válido</p>}
+            </div>
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">E-mail</label>
+              <input className={inp(erros.email)} type="email" placeholder="seu@email.com"
+                value={f.email} onChange={up('email')} readOnly={viaGoogle} />
+              {erros.email && <p className="text-red-500 text-xs mt-1">{erros.email}</p>}
+            </div>
+            {!viaGoogle && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha (mín. 6 caracteres)</label>
+                <input className={inp(erros.senha)} type="password" placeholder="••••••••" value={f.senha} onChange={up('senha')} />
+                {erros.senha && <p className="text-red-500 text-xs mt-1">{erros.senha}</p>}
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Telefone / WhatsApp</label>
+              <input className={inp(erros.tel)} placeholder="(88) 99999-0000" value={f.tel} onChange={up('tel')} />
+              {erros.tel && <p className="text-red-500 text-xs mt-1">{erros.tel}</p>}
+            </div>
+            {/* ── Melhoria 2: código real */}
+            <div>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Código da Concessionária *</label>
+              <input className={inp(erros.codConc)} placeholder="Ex: 1614410" value={f.codConc} onChange={up('codConc')} />
+              {erros.codConc
+                ? <p className="text-red-500 text-xs mt-1">{erros.codConc}</p>
+                : <p className="text-gray-400 text-xs mt-1">Solicite o código ao gerente da sua loja.</p>
+              }
+            </div>
+            {/* ── Melhoria 3: checkbox marketing */}
+            <label className="flex items-start gap-3 cursor-pointer pt-1 pb-1">
+              <input type="checkbox" checked={marketing} onChange={e=>setMarketing(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-[#f97316] flex-shrink-0" />
+              <span className="text-sm text-gray-600 leading-snug">
+                Quero receber ofertas e novidades do REVVO
+              </span>
+            </label>
+            <button type="submit" className="w-full bg-[#f97316] text-white py-3.5 rounded-2xl font-bold hover:bg-orange-600 transition-colors mt-1">
+              Criar Conta
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 4 — Upload de fotos obrigatórias (4 ângulos)
+// ══════════════════════════════════════════════════════════════
+const FOTO_LABELS = ['Frente','Traseira','Lateral Esquerda','Lateral Direita'];
+
+const PhotoSlot = ({ label, foto, onSelect, required }) => {
+  const ref = useRef();
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-600 mb-1.5 flex items-center gap-1">
+        {label} {required && !foto && <span className="text-red-500">*</span>}
+        {foto && <span className="text-emerald-600">✓</span>}
+      </p>
+      {foto ? (
+        <div className="relative group">
+          <img src={foto} alt={label} className="w-full h-28 object-cover rounded-xl border border-gray-200" />
+          <button type="button" onClick={()=>onSelect(null)}
+            className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full w-6 h-6 text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow">✕</button>
+        </div>
+      ) : (
+        <div onClick={()=>ref.current.click()}
+          className="w-full h-28 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#f97316] hover:bg-orange-50 transition-colors">
+          <span className="text-2xl mb-1">📷</span>
+          <span className="text-xs text-gray-400">Toque para adicionar</span>
+        </div>
+      )}
+      <input ref={ref} type="file" accept="image/*" className="hidden" onChange={e=>{
+        const file = e.target.files[0]; if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          // Comprime para max 800px e qualidade 0.75 antes de salvar
+          const img = new Image();
+          img.onload = () => {
+            const MAX = 800;
+            const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+            const canvas = document.createElement('canvas');
+            canvas.width  = Math.round(img.width  * ratio);
+            canvas.height = Math.round(img.height * ratio);
+            canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+            onSelect(canvas.toDataURL('image/jpeg', 0.75));
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+        e.target.value='';
+      }} />
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 5 — Laudo estruturado com estados obrigatórios
+// ══════════════════════════════════════════════════════════════
+const LAUDO_ITEMS = [
+  { key:'pneus',   label:'Pneus' },
+  { key:'relacao', label:'Relação / Corrente' },
+  { key:'pintura', label:'Pintura' },
+  { key:'motor',   label:'Motor' },
+];
+
+const LaudoForm = ({ laudo, onChange }) => {
+  const opts = ['Bom','Requer Atenção','Ruim'];
+  const clsBtn = (val, opt) =>
+    val===opt
+      ? opt==='Bom' ? 'bg-emerald-500 text-white border-emerald-500'
+      : opt==='Requer Atenção' ? 'bg-amber-500 text-white border-amber-500'
+      : 'bg-red-500 text-white border-red-500'
+      : 'border-gray-200 text-gray-500 hover:border-gray-400 bg-white';
+  return (
+    <div className="space-y-3">
+      {LAUDO_ITEMS.map(item => (
+        <div key={item.key} className="flex items-center justify-between flex-wrap gap-2">
+          <span className="text-sm text-gray-700 font-medium min-w-32">{item.label}</span>
+          <div className="flex gap-1.5">
+            {opts.map(opt => (
+              <button type="button" key={opt} onClick={()=>onChange(item.key,opt)}
+                className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors font-medium ${clsBtn(laudo[item.key],opt)}`}>
+                {opt}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// MELHORIA 6 — Hook FIPE (API pública Parallelum)
+// ══════════════════════════════════════════════════════════════
+const FIPE_BASE = 'https://parallelum.com.br/fipe/api/v1/motos';
+
+const useFIPE = () => {
+  const [marcas,   setMarcas]   = useState([]);
+  const [modelos,  setModelos]  = useState([]);
+  const [anos,     setAnos]     = useState([]);
+  const [fipeRes,  setFipeRes]  = useState(null);
+  const [fipeErr,  setFipeErr]  = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [mCod,setMCod] = useState('');
+  const [mdCod,setMdCod] = useState('');
+  const [aCod,setACod] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${FIPE_BASE}/marcas`)
+      .then(r=>r.json()).then(d=>{setMarcas(d||[]);setLoading(false);})
+      .catch(()=>{setFipeErr('FIPE indisponível — validação de preço desabilitada.');setLoading(false);});
+  }, []);
+
+  useEffect(() => {
+    if (!mCod) { setModelos([]); setMdCod(''); return; }
+    setLoading(true);
+    fetch(`${FIPE_BASE}/marcas/${mCod}/modelos`)
+      .then(r=>r.json()).then(d=>{setModelos(d?.modelos||[]);setLoading(false);})
+      .catch(()=>setLoading(false));
+  }, [mCod]);
+
+  useEffect(() => {
+    if (!mCod||!mdCod) { setAnos([]); setACod(''); return; }
+    setLoading(true);
+    fetch(`${FIPE_BASE}/marcas/${mCod}/modelos/${mdCod}/anos`)
+      .then(r=>r.json()).then(d=>{setAnos(d||[]);setLoading(false);})
+      .catch(()=>setLoading(false));
+  }, [mCod, mdCod]);
+
+  useEffect(() => {
+    if (!mCod||!mdCod||!aCod) { setFipeRes(null); return; }
+    setLoading(true);
+    fetch(`${FIPE_BASE}/marcas/${mCod}/modelos/${mdCod}/anos/${aCod}`)
+      .then(r=>r.json()).then(d=>{
+        const num = parseFloat((d.Valor||'0').replace('R$ ','').replace(/\./g,'').replace(',','.'));
+        setFipeRes({ valor: num, label: d.Valor, modelo: d.Modelo, marca: d.Marca, ano: d.AnoModelo });
+        setLoading(false);
+      }).catch(()=>setLoading(false));
+  }, [mCod, mdCod, aCod]);
+
+  return { marcas, modelos, anos, fipeRes, fipeErr, loading, mCod, setMCod, mdCod, setMdCod, aCod, setACod };
+};
+
+// ── Breakdown de precificação ──────────────────────────────────
+const Breakdown = ({ pd }) => {
+  const { precoFinal, bonus, onzePct, comissaoVenda, lucroApp } = calc(pd);
+  return (
+    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm">
+      <p className="font-bold text-[#080f1e] mb-3">Cálculo do Preço</p>
+      <div className="space-y-1.5">
+        <RowD l="Preço desejado pelo dono" v={R(pd)} />
+        <RowD l="+ Bônus de captação (fixo)" v={R(bonus)} vc="text-orange-500" />
+        <RowD l="+ 11% sobre preço desejado" v={R(onzePct)} />
+        <div className="border-t border-blue-200 pt-2 mt-1 flex justify-between font-bold text-[#080f1e]">
+          <span>= Preço ao comprador</span><span className="text-lg">{R(precoFinal)}</span>
+        </div>
+      </div>
+      <div className="mt-3 pt-3 border-t border-blue-200">
+        <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Distribuição dos 11%</p>
+        <RowD l="Comissão Vendedor B (1% do preço final)" v={R(comissaoVenda)} vc="text-emerald-600" />
+        <RowD l="Lucro App + Concessionária" v={R(lucroApp)} vc="text-[#080f1e]" />
+      </div>
+    </div>
+  );
+};
+const RowD = ({ l, v, vc='text-gray-700' }) => (
+  <div className="flex justify-between text-sm"><span className="text-gray-500">{l}</span><span className={`font-medium ${vc}`}>{v}</span></div>
+);
+
+// ── Assinatura digital ─────────────────────────────────────────
+const SigPad = ({ onSign }) => {
+  const ref = useRef(); const drawing = useRef(false); const [signed,setSigned] = useState(false);
+  const pos = (e) => { const r=ref.current.getBoundingClientRect(); const s=e.touches?e.touches[0]:e; return [s.clientX-r.left,s.clientY-r.top]; };
+  const start = (e) => { drawing.current=true; const ctx=ref.current.getContext('2d'); ctx.beginPath(); const [x,y]=pos(e); ctx.moveTo(x,y); };
+  const move  = (e) => { if(!drawing.current)return; e.preventDefault(); const ctx=ref.current.getContext('2d'); ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#080f1e'; const [x,y]=pos(e); ctx.lineTo(x,y);ctx.stroke();ctx.beginPath();ctx.moveTo(x,y); setSigned(true);onSign(true); };
+  const stop  = () => { drawing.current=false; };
+  const clear = () => { ref.current.getContext('2d').clearRect(0,0,500,120); setSigned(false); onSign(false); };
+  return (
+    <div>
+      <p className="text-sm font-medium text-gray-700 mb-1">Assine abaixo:</p>
+      <canvas ref={ref} width={500} height={120} className="sig-pad border-2 border-dashed border-gray-300 rounded-xl w-full bg-gray-50"
+        onMouseDown={start} onMouseMove={move} onMouseUp={stop} onMouseLeave={stop}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={stop} />
+      <button type="button" onClick={clear} className="text-xs text-gray-400 hover:text-gray-600 mt-1">Limpar</button>
+    </div>
+  );
+};
+
+// ── Modal contrato ─────────────────────────────────────────────
+const ContratoModal = ({ m, tipo, onClose, onOk }) => {
+  const [ok,setOk] = useState(tipo==='honorarios');
+  const titles = { intermediacao:'Instrumento de Intermediação', comprador:'Termo de Ciência do Comprador', honorarios:'Recibo de Honorários' };
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold text-[#080f1e]">{titles[tipo]}</h2>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-4 text-sm text-gray-700 space-y-3 mb-4 leading-relaxed border border-slate-100">
+            <p className="text-center font-bold text-[#080f1e] text-base">{titles[tipo].toUpperCase()}</p>
+            <p><strong>VEÍCULO:</strong> {m.vei.marca} {m.vei.modelo}, ano {m.vei.ano}, placa <strong>{m.vei.placa}</strong>, Renavam {m.vei.renavam}.</p>
+            {tipo==='intermediacao' && <>
+              <p><strong>PROPRIETÁRIO:</strong> {m.prop.nome}, CPF {m.prop.cpf}.</p>
+              <p><strong>VALOR DESEJADO:</strong> {R(m.pd)}, revertido como crédito na concessionária parceira.</p>
+              <p><strong>INTERMEDIAÇÃO:</strong> A REVVO atua exclusivamente como intermediária. O proprietário responde por vícios ocultos.</p>
+              <p><strong>BÔNUS DE CAPTAÇÃO:</strong> {R(m.bonus)} ao vendedor captador, incluído no preço ao comprador.</p>
+              <p><strong>CONFIDENCIALIDADE:</strong> As partes mantêm sigilo sobre os termos desta operação.</p>
+            </>}
+            {tipo==='comprador' && <>
+              <p><strong>COMPRADOR:</strong> {m.comprador?.nome}, CPF {m.comprador?.cpf}.</p>
+              <p><strong>CIÊNCIA C2C:</strong> Transação entre particulares. CDC inaplicável. Sem garantia mecânica.</p>
+              <p><strong>PREÇO:</strong> O comprador se compromete a pagar {R(m.precoFinal)}.</p>
+              <p><strong>TRANSFERÊNCIA:</strong> Prazo de 30 dias para transferência no DETRAN.</p>
+            </>}
+            {tipo==='honorarios' && <>
+              <p><strong>HONORÁRIOS:</strong> A REVVO recebeu {R(m.lucroApp+m.comissaoVenda)} pela intermediação.</p>
+              <p><strong>NATUREZA:</strong> Valor de serviço de intermediação, não integra o preço do veículo.</p>
+              <p>Data: {new Date().toLocaleDateString('pt-BR')}.</p>
+            </>}
+          </div>
+          {tipo!=='honorarios' && <SigPad onSign={setOk} />}
+          <div className="flex gap-3 mt-5">
+            <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+            <button onClick={()=>{onOk(tipo);onClose();}} disabled={!ok}
+              className="flex-1 bg-[#080f1e] text-white py-2.5 rounded-xl disabled:opacity-40 text-sm font-semibold">
+              {tipo==='honorarios'?'✓ Gerar Recibo':'✓ Assinar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── MotoImg ────────────────────────────────────────────────────
+const MotoImg = ({ m, large }) => {
+  const foto = m.fotos && m.fotos[0];
+  if (foto) return <img src={foto} alt="" className={`w-full ${large?'h-56':'h-44'} object-cover`} />;
+  return (
+    <div className={`w-full ${large?'h-56':'h-44'} bg-gradient-to-br from-[#080f1e] to-blue-800 flex items-center justify-center`}>
+      <div className="text-center text-white opacity-80"><div className="text-4xl mb-1">🏍️</div><p className="text-sm font-bold">{m.vei.marca} {m.vei.modelo}</p></div>
+    </div>
+  );
+};
+
+// ── Modal detalhe moto ─────────────────────────────────────────
+const MotoModal = ({ m, user, onClose, onAvancar, onConcluir }) => {
+  const [contrato,setContrato]   = useState(null);
+  const [interesseOpen,setInt]   = useState(false);
+  const [compForm,setComp]       = useState({nome:'',cpf:'',fone:''});
+  const [cpfErr,setCpfErr]       = useState('');
+  const [fotoIdx,setFotoIdx]     = useState(0);
+
+  const podeAvancar  = user.perfil==='vendedor' && m.status==='disponivel' && m.capId!==user.id;
+  const podeConcluir = (user.perfil==='vendedor'||user.perfil==='gerente') && m.status==='em_negociacao';
+
+  const handleSign = (tipo) => { if (tipo==='honorarios') { onConcluir(m.id); onClose(); } };
+
+  const confirmarInteresse = () => {
+    if (!validarCPF(compForm.cpf)) { setCpfErr('CPF inválido.'); return; }
+    onAvancar(m.id, compForm); setInt(false); onClose();
+  };
+
+  const fotos = m.fotos||[];
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="p-6">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <h2 className="text-xl font-bold text-[#080f1e]">{m.vei.marca} {m.vei.modelo} {m.vei.ano}</h2>
+              <div className="flex items-center gap-2 mt-1"><Badge s={m.status}/><span className="text-gray-400 text-sm">{m.conc}</span></div>
+            </div>
+            <button onClick={onClose} className="text-gray-400 text-2xl leading-none">×</button>
+          </div>
+
+          {/* Galeria de fotos */}
+          <div className="rounded-xl overflow-hidden mb-1">
+            {fotos[fotoIdx] ? (
+              <img src={fotos[fotoIdx]} alt="" className="w-full h-56 object-cover" />
+            ) : (
+              <MotoImg m={m} large />
+            )}
+          </div>
+          {fotos.some(Boolean) && (
+            <div className="flex gap-2 mb-4 mt-2">
+              {fotos.map((f,i) => f && (
+                <img key={i} src={f} onClick={()=>setFotoIdx(i)} className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 ${fotoIdx===i?'border-[#f97316]':'border-transparent'}`} />
+              ))}
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-3 mt-4 text-sm mb-4">
+            {[['Placa',m.vei.placa],['Ano',m.vei.ano],['KM',m.vei.km.toLocaleString('pt-BR')]].map(([k,v])=>(
+              <div key={k} className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-gray-400 text-xs">{k}</p><p className="font-bold text-gray-800">{v}</p></div>
+            ))}
+          </div>
+
+          <div className="mb-4">
+            <p className="text-sm font-semibold text-gray-700 mb-1">Conservação</p>
+            <p className="text-sm text-gray-600 bg-slate-50 rounded-xl p-3">{m.obs}</p>
+            {m.laudo && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {Object.entries(m.laudo).map(([k,v])=>(
+                  <span key={k} className={`text-xs px-2 py-0.5 rounded-full font-medium ${v==='Bom'?'bg-emerald-100 text-emerald-700':v==='Requer Atenção'?'bg-amber-100 text-amber-700':'bg-red-100 text-red-700'}`}>
+                    {LAUDO_ITEMS.find(i=>i.key===k)?.label}: {v}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <Breakdown pd={m.pd} />
+
+          <div className="mt-4 pt-4 border-t border-slate-100 text-sm space-y-1.5">
+            <RowD l="Proprietário" v={m.prop.nome} />
+            <RowD l="Contato" v={m.prop.fone} />
+            <RowD l="Vendedor Captação (A)" v={m.cap} />
+            {m.vend && <RowD l="Vendedor Venda (B)" v={m.vend} />}
+            {m.comprador && <RowD l="Comprador" v={m.comprador.nome} />}
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            {podeAvancar && <button onClick={()=>setInt(true)} className="bg-[#f97316] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600">🤝 Tenho um comprador</button>}
+            {podeConcluir && <>
+              <button onClick={()=>setContrato('intermediacao')} className="bg-[#080f1e] text-white px-3 py-2 rounded-xl text-sm hover:bg-[#1a2540]">📄 Contrato Proprietário</button>
+              <button onClick={()=>setContrato('comprador')} className="border border-[#080f1e] text-[#080f1e] px-3 py-2 rounded-xl text-sm hover:bg-blue-50">📋 Termo Comprador</button>
+              <button onClick={()=>setContrato('honorarios')} className="bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm hover:bg-emerald-700">✅ Concluir + Recibo</button>
+            </>}
+            {m.status==='concluido' && <p className="text-emerald-600 font-semibold text-sm self-center">✓ Negociação concluída</p>}
+          </div>
+        </div>
+      </div>
+
+      {interesseOpen && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={()=>setInt(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e=>e.stopPropagation()}>
+            <h3 className="font-bold text-[#080f1e] text-lg mb-4">Registrar Comprador</h3>
+            <div className="space-y-3">
+              <input className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]" placeholder="Nome completo *" value={compForm.nome} onChange={e=>setComp(p=>({...p,nome:e.target.value}))} />
+              <div>
+                <input className={`w-full border ${cpfErr?'border-red-400':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]`}
+                  placeholder="CPF * (000.000.000-00)" value={compForm.cpf}
+                  onChange={e=>{setComp(p=>({...p,cpf:fmtCPF(e.target.value)}));setCpfErr('');}} />
+                {cpfErr && <p className="text-red-500 text-xs mt-1">{cpfErr}</p>}
+                {compForm.cpf.length===14 && validarCPF(compForm.cpf) && <p className="text-emerald-600 text-xs mt-1">✓ CPF válido</p>}
+              </div>
+              <input className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]" placeholder="WhatsApp *" value={compForm.fone} onChange={e=>setComp(p=>({...p,fone:e.target.value}))} />
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={()=>setInt(false)} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+              <button disabled={!compForm.nome} onClick={confirmarInteresse} className="flex-1 bg-[#f97316] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {contrato && <ContratoModal m={m} tipo={contrato} onClose={()=>setContrato(null)} onOk={handleSign} />}
+    </div>
+  );
+};
+
+// ── VITRINE ────────────────────────────────────────────────────
+const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
+  const [sel,setSel]     = useState(null);
+  const [busca,setBusca] = useState('');
+  const [filtSt,setFilt] = useState('');
+  const list = motos.filter(m => (!busca || `${m.vei.marca} ${m.vei.modelo}`.toLowerCase().includes(busca.toLowerCase())) && (!filtSt || m.status===filtSt));
+  return (
+    <div>
+      <div className="mb-5"><h1 className="text-2xl font-bold text-[#080f1e]">Vitrine de Motos</h1><p className="text-gray-400 text-sm">{list.length} moto(s)</p></div>
+      <div className="flex flex-wrap gap-3 mb-6">
+        <input className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#f97316]" placeholder="🔍 Buscar modelo..." value={busca} onChange={e=>setBusca(e.target.value)} />
+        <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm" value={filtSt} onChange={e=>setFilt(e.target.value)}>
+          <option value="">Todos os status</option>
+          <option value="disponivel">Disponível</option>
+          <option value="em_negociacao">Em Negociação</option>
+          <option value="concluido">Concluído</option>
+        </select>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {list.map(m=>(
+          <div key={m.id} onClick={()=>setSel(m)} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all">
+            <div className="relative rounded-t-2xl overflow-hidden"><MotoImg m={m}/><div className="absolute top-3 right-3"><Badge s={m.status}/></div></div>
+            <div className="p-4">
+              <h3 className="font-bold text-gray-800 text-lg">{m.vei.marca} {m.vei.modelo}</h3>
+              <p className="text-gray-400 text-sm">{m.vei.ano} • {m.vei.km.toLocaleString('pt-BR')} km • {m.conc}</p>
+              <div className="mt-3 pt-3 border-t border-slate-50">
+                <p className="text-2xl font-bold text-[#080f1e]">{R(m.precoFinal)}</p>
+                <p className="text-xs text-gray-400">Preço ao comprador</p>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Captação: {m.cap}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} />}
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// CADASTRO — integra melhorias 3, 4, 5 e 6
+// ══════════════════════════════════════════════════════════════
+const Card = ({ title, children, badge }) => (
+  <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+    <div className="flex items-center gap-2 mb-4">
+      <p className="font-bold text-gray-800">{title}</p>
+      {badge}
+    </div>
+    {children}
+  </div>
+);
+
+const Cadastro = ({ user, onSave }) => {
+  // Proprietário
+  const [pNome,setPNome] = useState('');
+  const [pCpf,setPCpf]  = useState('');
+  const [pFone,setPFone] = useState('');
+  const [pCpfErr,setPCpfErr] = useState('');
+
+  // Veículo
+  const [placa,setPlaca]     = useState('');
+  const [renavam,setRenavam] = useState('');
+  const [km,setKm]           = useState('');
+  const [placaErr,setPlacaErr] = useState('');
+
+  // Conservação
+  const [obs,setObs] = useState('');
+  const [laudo,setLaudo] = useState({ pneus:'', relacao:'', pintura:'', motor:'' });
+
+  // Fotos (4 slots obrigatórios)
+  const [fotos,setFotos] = useState([null,null,null,null]);
+
+  // Preço
+  const [pd,setPd] = useState('');
+
+  // Erros gerais
+  const [erros,setErros] = useState({});
+
+  // FIPE
+  const fipe = useFIPE();
+  const [fipeAviso,setFipeAviso] = useState('');
+
+  const setFoto = (idx,val) => setFotos(p=>{ const n=[...p]; n[idx]=val; return n; });
+  const setLaudoItem = (k,v) => setLaudo(p=>({...p,[k]:v}));
+
+  // Placa: formata e valida em tempo real
+  const handlePlaca = (e) => {
+    const v = fmtPlaca(e.target.value);
+    setPlaca(v);
+    if (v.length>=7) setPlacaErr(validarPlaca(v)?'':'Formato inválido. Use ABC1234 (antiga) ou ABC1D23 (Mercosul).');
+    else setPlacaErr('');
+  };
+
+  // CPF proprietário: valida em tempo real
+  const handleCpf = (e) => {
+    const v = fmtCPF(e.target.value);
+    setPCpf(v);
+    if (v.length===14) setPCpfErr(validarCPF(v)?'':'CPF inválido.');
+    else setPCpfErr('');
+  };
+
+  // Validação de preço vs FIPE
+  const pdNum = parseFloat(pd)||0;
+  const fipeExcede = fipe.fipeRes && pdNum > 0 && pdNum > fipe.fipeRes.valor;
+
+  const inp = (err) => `w-full border ${err?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]`;
+  const sel = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316] bg-white";
+
+  const validar = () => {
+    const e = {};
+    if (!pNome.trim()) e.pNome='Nome obrigatório.';
+    if (!validarCPF(pCpf)) e.pCpf='CPF inválido.';
+    if (!pFone.trim()) e.pFone='Telefone obrigatório.';
+    if (!validarPlaca(placa)) e.placa='Placa inválida.';
+    if (!renavam.trim()) e.renavam='Renavam obrigatório.';
+    if (!km) e.km='KM obrigatório.';
+
+    // Melhoria 5: laudo
+    const laudoIncompleto = LAUDO_ITEMS.some(i=>!laudo[i.key]);
+    if (laudoIncompleto) e.laudo='Preencha todos os itens do laudo.';
+    const laudoAtencao = LAUDO_ITEMS.filter(i=>laudo[i.key]==='Requer Atenção').map(i=>i.label);
+    if (laudoAtencao.length>0) e.laudoAtencao=`Item(ns) com atenção necessária: ${laudoAtencao.join(', ')}. Resolva antes de cadastrar.`;
+
+    // Melhoria 4: fotos
+    const fotosFaltando = fotos.map((f,i)=>!f?FOTO_LABELS[i]:null).filter(Boolean);
+    if (fotosFaltando.length>0) e.fotos=`Fotos obrigatórias faltando: ${fotosFaltando.join(', ')}.`;
+
+    if (!pd || pdNum<=0) e.pd='Informe o valor desejado.';
+    // Melhoria 6: FIPE
+    if (fipeExcede) e.pd=`Valor acima da tabela FIPE (${R(fipe.fipeRes.valor)}). Reduza o preço desejado.`;
+
+    setErros(e);
+    return Object.keys(e).length===0;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!validar()) { window.scrollTo({top:0,behavior:'smooth'}); return; }
+    const marcaLabel  = fipe.marcas.find(m=>m.codigo===fipe.mCod)?.nome || '';
+    const modeloLabel = fipe.modelos.find(m=>m.codigo===fipe.mdCod)?.nome || '';
+    const anoLabel    = fipe.anos.find(a=>a.codigo===fipe.aCod)?.nome || '';
+    onSave({
+      id: Date.now(),
+      prop:{ nome:pNome, cpf:pCpf, fone:pFone },
+      vei:{ marca:marcaLabel||'—', modelo:modeloLabel||'—', ano:parseInt(anoLabel)||new Date().getFullYear(), placa, renavam, km:parseInt(km) },
+      obs, laudo, fotos, pd:pdNum, ...calc(pdNum),
+      status:'disponivel', capId:user.id, cap:user.nome,
+      vendId:null, vend:null, comprador:null, conc:user.conc, data:new Date().toISOString().split('T')[0],
+    });
+  };
+
+  const allFotos = fotos.every(Boolean);
+  const laudoOk  = LAUDO_ITEMS.every(i=>laudo[i.key]);
+
+  return (
+    <div className="max-w-2xl">
+      <div className="mb-6"><h1 className="text-2xl font-bold text-[#080f1e]">Cadastrar Moto</h1><p className="text-gray-400 text-sm">Todos os campos marcados com * são obrigatórios</p></div>
+
+      {/* Erros no topo */}
+      {Object.keys(erros).length>0 && (
+        <div className="mb-5 bg-red-50 border border-red-200 rounded-2xl p-4">
+          <p className="font-bold text-red-700 text-sm mb-2">Corrija os seguintes erros:</p>
+          <ul className="space-y-1">{Object.values(erros).map((e,i)=><li key={i} className="text-red-600 text-xs">• {e}</li>)}</ul>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Proprietário */}
+        <Card title="Dados do Proprietário">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="sm:col-span-2">
+              <input className={inp(erros.pNome)} placeholder="Nome completo *" value={pNome} onChange={e=>setPNome(e.target.value)} />
+              {erros.pNome && <p className="text-red-500 text-xs mt-1">{erros.pNome}</p>}
+            </div>
+            <div>
+              <input className={inp(erros.pCpf||pCpfErr)} placeholder="CPF * (000.000.000-00)" value={pCpf} onChange={handleCpf} />
+              {(erros.pCpf||pCpfErr) && <p className="text-red-500 text-xs mt-1">{erros.pCpf||pCpfErr}</p>}
+              {pCpf.length===14 && validarCPF(pCpf) && <p className="text-emerald-600 text-xs mt-1">✓ CPF válido</p>}
+            </div>
+            <div>
+              <input className={inp(erros.pFone)} placeholder="WhatsApp *" value={pFone} onChange={e=>setPFone(e.target.value)} />
+              {erros.pFone && <p className="text-red-500 text-xs mt-1">{erros.pFone}</p>}
+            </div>
+          </div>
+        </Card>
+
+        {/* Veículo — Marca/Modelo/Ano via FIPE */}
+        <Card title="Dados do Veículo"
+          badge={fipe.fipeErr ? <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">FIPE offline</span> : fipe.loading ? <span className="text-xs text-blue-500">Carregando FIPE…</span> : null}>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+            {/* MELHORIA 6 — Selects FIPE */}
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Marca *</label>
+              <select className={sel} value={fipe.mCod} onChange={e=>fipe.setMCod(e.target.value)} disabled={fipe.fipeErr||fipe.marcas.length===0}>
+                <option value="">Selecione…</option>
+                {fipe.marcas.map(m=><option key={m.codigo} value={m.codigo}>{m.nome}</option>)}
+              </select>
+              {!fipe.mCod && erros.marca && <p className="text-red-500 text-xs mt-1">{erros.marca}</p>}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Modelo *</label>
+              <select className={sel} value={fipe.mdCod} onChange={e=>fipe.setMdCod(e.target.value)} disabled={!fipe.mCod}>
+                <option value="">Selecione…</option>
+                {fipe.modelos.map(m=><option key={m.codigo} value={m.codigo}>{m.nome}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Ano *</label>
+              <select className={sel} value={fipe.aCod} onChange={e=>fipe.setACod(e.target.value)} disabled={!fipe.mdCod}>
+                <option value="">Selecione…</option>
+                {fipe.anos.map(a=><option key={a.codigo} value={a.codigo}>{a.nome}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Preço FIPE consultado */}
+          {fipe.fipeRes && (
+            <div className="mb-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm">
+              <p className="font-bold text-[#080f1e]">Tabela FIPE: <span className="text-[#f97316]">{fipe.fipeRes.label}</span></p>
+              <p className="text-gray-500 text-xs">{fipe.fipeRes.marca} {fipe.fipeRes.modelo} — {fipe.fipeRes.ano}</p>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Placa *</label>
+              <input className={inp(erros.placa||placaErr)} placeholder="ABC1234" value={placa} onChange={handlePlaca} maxLength={7} />
+              {(erros.placa||placaErr) && <p className="text-red-500 text-xs mt-1">{erros.placa||placaErr}</p>}
+              {placa.length>=7 && validarPlaca(placa) && <p className="text-emerald-600 text-xs mt-1">✓ Placa válida</p>}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Renavam *</label>
+              <input className={inp(erros.renavam)} placeholder="00000000000" value={renavam} onChange={e=>setRenavam(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">KM atual *</label>
+              <input className={inp(erros.km)} type="number" placeholder="0" value={km} onChange={e=>setKm(e.target.value)} />
+            </div>
+          </div>
+        </Card>
+
+        {/* Fotos obrigatórias — MELHORIA 4 */}
+        <Card title="Fotos do Veículo"
+          badge={allFotos
+            ? <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Todas enviadas</span>
+            : <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">{fotos.filter(Boolean).length}/4 obrigatórias</span>}>
+          {erros.fotos && <p className="text-red-500 text-sm mb-3 bg-red-50 rounded-xl px-3 py-2">{erros.fotos}</p>}
+          <div className="grid grid-cols-2 gap-3">
+            {FOTO_LABELS.map((label,i) => (
+              <PhotoSlot key={i} label={label} foto={fotos[i]} onSelect={v=>setFoto(i,v)} required />
+            ))}
+          </div>
+        </Card>
+
+        {/* Laudo — MELHORIA 5 */}
+        <Card title="Laudo de Conservação"
+          badge={laudoOk
+            ? <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">✓ Completo</span>
+            : <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full">Preencha todos</span>}>
+          <LaudoForm laudo={laudo} onChange={setLaudoItem} />
+          {erros.laudo && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-xl px-3 py-2">{erros.laudo}</p>}
+          {erros.laudoAtencao && <p className="text-amber-700 text-sm mt-2 bg-amber-50 rounded-xl px-3 py-2">⚠️ {erros.laudoAtencao}</p>}
+          <div className="mt-3">
+            <label className="text-xs text-gray-500 font-medium">Observações adicionais</label>
+            <textarea className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm h-20 resize-none focus:outline-none focus:border-[#f97316]" placeholder="Descreva o estado geral..." value={obs} onChange={e=>setObs(e.target.value)} />
+          </div>
+        </Card>
+
+        {/* Precificação + FIPE — MELHORIA 6 */}
+        <Card title="Precificação">
+          <label className="text-sm text-gray-500 mb-1 block">Valor desejado pelo proprietário (R$) *</label>
+          <input className={`${inp(erros.pd||fipeExcede)} text-xl font-bold`} placeholder="0,00" type="number" step="0.01" value={pd} onChange={e=>setPd(e.target.value)} />
+
+          {fipeExcede && (
+            <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm">
+              <p className="font-bold text-red-700">⛔ Valor acima da tabela FIPE</p>
+              <p className="text-red-600">O preço desejado <strong>{R(pdNum)}</strong> supera o valor FIPE de <strong>{R(fipe.fipeRes?.valor)}</strong>.</p>
+              <p className="text-gray-500 text-xs mt-1">Valor máximo permitido: <strong>{R(fipe.fipeRes?.valor)}</strong></p>
+              <button type="button" onClick={()=>setPd(String(fipe.fipeRes.valor))}
+                className="mt-2 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700">
+                Usar valor FIPE ({R(fipe.fipeRes?.valor)})
+              </button>
+            </div>
+          )}
+
+          {!fipeExcede && fipe.fipeRes && pdNum>0 && (
+            <p className="text-emerald-600 text-xs mt-2">✓ Dentro do limite FIPE ({R(fipe.fipeRes.valor)})</p>
+          )}
+
+          {erros.pd && !fipeExcede && <p className="text-red-500 text-xs mt-1">{erros.pd}</p>}
+
+          {pdNum>0 && !fipeExcede && <div className="mt-4"><Breakdown pd={pdNum} /></div>}
+        </Card>
+
+        <button type="submit"
+          className="w-full bg-[#f97316] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 transition-colors shadow-lg">
+          Cadastrar Moto
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// ── NEGOCIAÇÕES ────────────────────────────────────────────────
+const Negociacoes = ({ motos }) => {
+  const cols = [
+    {key:'disponivel',label:'Disponível',color:'bg-emerald-500'},
+    {key:'em_negociacao',label:'Em Negociação',color:'bg-amber-500'},
+    {key:'aguardando_assinatura',label:'Aguard. Assinatura',color:'bg-blue-500'},
+    {key:'concluido',label:'Concluído',color:'bg-slate-500'},
+  ];
+  return (
+    <div>
+      <div className="mb-6"><h1 className="text-2xl font-bold text-[#080f1e]">Gestão de Negociações</h1><p className="text-gray-400 text-sm">Kanban de operações</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {cols.map(col=>{
+          const items = motos.filter(m=>m.status===col.key);
+          return (
+            <div key={col.key} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              <div className={`${col.color} px-4 py-2.5 flex justify-between items-center`}>
+                <span className="text-white font-semibold text-sm">{col.label}</span>
+                <span className="bg-white/25 text-white text-xs px-2 py-0.5 rounded-full font-bold">{items.length}</span>
+              </div>
+              <div className="p-3 space-y-2 min-h-32">
+                {items.map(m=>(
+                  <div key={m.id} className="bg-slate-50 rounded-xl p-3 text-xs border border-slate-100">
+                    <p className="font-bold text-gray-800">{m.vei.marca} {m.vei.modelo} {m.vei.ano}</p>
+                    <p className="text-gray-400">{m.vei.placa}</p>
+                    <p className="text-[#080f1e] font-bold mt-1">{R(m.precoFinal)}</p>
+                    <div className="mt-1.5 space-y-0.5 text-gray-500">
+                      <p>A: {m.cap}</p>
+                      {m.vend && <p>B: {m.vend}</p>}
+                      {m.comprador && <p>Comprador: {m.comprador.nome}</p>}
+                    </div>
+                  </div>
+                ))}
+                {items.length===0 && <p className="text-gray-300 text-xs text-center pt-4">Nenhuma</p>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ── COMISSÕES ──────────────────────────────────────────────────
+const Comissoes = ({ motos, user }) => {
+  const rows = [];
+  motos.forEach(m=>{
+    const all = user.perfil!=='vendedor';
+    if (all||m.capId===user.id) rows.push({id:`c${m.id}`,moto:`${m.vei.marca} ${m.vei.modelo} ${m.vei.ano}`,tipo:'Captação',valor:m.bonus,paga:m.status==='concluido',vendedor:m.cap,data:m.data});
+    if (m.vendId&&(all||m.vendId===user.id)) rows.push({id:`v${m.id}`,moto:`${m.vei.marca} ${m.vei.modelo} ${m.vei.ano}`,tipo:'Venda 1%',valor:m.comissaoVenda,paga:m.status==='concluido',vendedor:m.vend,data:m.data});
+  });
+  const tot=rows.reduce((s,r)=>s+r.valor,0), pago=rows.filter(r=>r.paga).reduce((s,r)=>s+r.valor,0), pend=tot-pago;
+  return (
+    <div>
+      <div className="mb-6"><h1 className="text-2xl font-bold text-[#080f1e]">Comissões</h1><p className="text-gray-400 text-sm">{user.perfil==='vendedor'?'Suas comissões':'Comissões da equipe'}</p></div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        {[['Total Acumulado',R(tot),'text-[#080f1e]'],['Pendentes',R(pend),'text-amber-600'],['Pagas',R(pago),'text-emerald-600']].map(([l,v,c])=>(
+          <div key={l} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><p className="text-sm text-gray-400">{l}</p><p className={`text-2xl font-bold ${c}`}>{v}</p></div>
+        ))}
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead className="bg-slate-50"><tr>
+            {user.perfil!=='vendedor'&&<th className="text-left px-4 py-3 text-gray-400 font-medium">Vendedor</th>}
+            <th className="text-left px-4 py-3 text-gray-400 font-medium">Veículo</th>
+            <th className="text-left px-4 py-3 text-gray-400 font-medium">Tipo</th>
+            <th className="text-right px-4 py-3 text-gray-400 font-medium">Valor</th>
+            <th className="text-center px-4 py-3 text-gray-400 font-medium">Status</th>
+          </tr></thead>
+          <tbody>{rows.map(r=>(
+            <tr key={r.id} className="border-t border-slate-50 hover:bg-slate-50/50">
+              {user.perfil!=='vendedor'&&<td className="px-4 py-3 text-gray-700">{r.vendedor}</td>}
+              <td className="px-4 py-3 text-gray-700 font-medium">{r.moto}</td>
+              <td className="px-4 py-3 text-gray-400">{r.tipo}</td>
+              <td className="px-4 py-3 text-right font-bold text-[#080f1e]">{R(r.valor)}</td>
+              <td className="px-4 py-3 text-center">
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.paga?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}`}>{r.paga?'Paga':'Pendente'}</span>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      </div>
+    </div>
+  );
+};
+
+// ── RELATÓRIO ──────────────────────────────────────────────────
+const Relatorio = ({ motos, user }) => {
+  const conc=motos.filter(m=>m.status==='concluido');
+  const vol=conc.reduce((s,m)=>s+m.precoFinal,0), com=conc.reduce((s,m)=>s+m.comissaoVenda+m.bonus,0), app=conc.reduce((s,m)=>s+m.lucroApp,0);
+  return (
+    <div>
+      <div className="mb-6 flex justify-between items-start flex-wrap gap-3">
+        <div><h1 className="text-2xl font-bold text-[#080f1e]">Relatório Mensal</h1><p className="text-gray-400 text-sm">Janeiro 2024 — {user.conc||'Todas as concessionárias'}</p></div>
+        <button className="bg-[#080f1e] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#1a2540]">⬇ Exportar PDF</button>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {[['Negócios','text-[#080f1e]',conc.length,'text-3xl'],['Volume Total','text-[#080f1e]',R(vol),'text-xl'],['Comissões','text-amber-600',R(com),'text-xl'],['A Pagar App','text-[#f97316]',R(app),'text-xl border-l-4 border-[#f97316]']].map(([l,c,v,tc])=>(
+          <div key={l} className={`bg-white rounded-2xl p-5 shadow-sm border border-slate-100 ${tc.includes('border')?'border-l-4 border-l-[#f97316]':''}`}>
+            <p className="text-xs text-gray-400 mb-1">{l}</p><p className={`font-bold ${c} ${tc.split(' ').filter(x=>x.startsWith('text-')).join(' ')}`}>{v}</p>
+          </div>
+        ))}
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
+        <div className="px-5 py-4 border-b border-slate-50"><h3 className="font-bold text-gray-800">Negócios Concluídos</h3></div>
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead className="bg-slate-50"><tr>
+            <th className="text-left px-4 py-3 text-gray-400 font-medium">Veículo</th>
+            <th className="text-left px-4 py-3 text-gray-400 font-medium">Vendedor A</th>
+            <th className="text-left px-4 py-3 text-gray-400 font-medium">Vendedor B</th>
+            <th className="text-right px-4 py-3 text-gray-400 font-medium">Preço Final</th>
+            <th className="text-right px-4 py-3 text-gray-400 font-medium">App Recebe</th>
+          </tr></thead>
+          <tbody>{conc.map(m=>(
+            <tr key={m.id} className="border-t border-slate-50 hover:bg-slate-50/50">
+              <td className="px-4 py-3 font-medium text-gray-800">{m.vei.marca} {m.vei.modelo} {m.vei.ano}</td>
+              <td className="px-4 py-3 text-gray-500">{m.cap}</td>
+              <td className="px-4 py-3 text-gray-500">{m.vend||'—'}</td>
+              <td className="px-4 py-3 text-right font-medium">{R(m.precoFinal)}</td>
+              <td className="px-4 py-3 text-right font-bold text-[#f97316]">{R(m.lucroApp)}</td>
+            </tr>
+          ))}</tbody>
+          <tfoot className="bg-slate-50 border-t-2 border-slate-200"><tr>
+            <td colSpan="3" className="px-4 py-3 font-bold text-gray-800">Total</td>
+            <td className="px-4 py-3 text-right font-bold">{R(vol)}</td>
+            <td className="px-4 py-3 text-right font-bold text-[#f97316]">{R(app)}</td>
+          </tr></tfoot>
+        </table></div>
+      </div>
+      {user.perfil==='super_admin' && (
+        <div className="bg-[#080f1e] rounded-2xl p-6 text-white">
+          <h3 className="font-bold text-xl mb-1">Fatura — NortMotos — Janeiro 2024</h3>
+          <p className="text-blue-300 text-sm mb-4">Intermediação de {conc.length} veículo(s)</p>
+          <p className="text-4xl font-bold text-[#f97316]">{R(app)}</p>
+          <p className="text-blue-300 text-sm mt-1">Vencimento: 31/01/2024</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ── CONCESSIONÁRIAS ────────────────────────────────────────────
+const Concessionarias = ({ concs, motos, onToggle }) => (
+  <div>
+    <div className="mb-6 flex justify-between items-center">
+      <div><h1 className="text-2xl font-bold text-[#080f1e]">Concessionárias Parceiras</h1><p className="text-gray-400 text-sm">{concs.length} parceira(s)</p></div>
+      <button className="bg-[#f97316] text-white px-4 py-2 rounded-xl text-sm hover:bg-orange-600">+ Nova Parceira</button>
+    </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      {concs.map(c=>{
+        const mc=motos.filter(m=>m.conc===c.nome), cc=mc.filter(m=>m.status==='concluido');
+        const appTotal=cc.reduce((s,m)=>s+m.lucroApp,0);
+        return (
+          <div key={c.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
+            <div className="flex justify-between items-start mb-4">
+              <div><h3 className="font-bold text-gray-800 text-xl">{c.nome}</h3><p className="text-gray-400 text-sm">{c.cidade} — {c.uf}</p></div>
+              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${c.ativa?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{c.ativa?'Ativa':'Inativa'}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3 text-sm mb-4">
+              {[['Total Motos',mc.length],['Concluídos',cc.length],['A Pagar',R(appTotal)]].map(([l,v])=>(
+                <div key={l} className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-gray-400 text-xs">{l}</p><p className="font-bold text-[#080f1e]">{v}</p></div>
+              ))}
+            </div>
+            <button onClick={()=>onToggle(c.id)} className="w-full border border-gray-200 text-gray-600 py-2 rounded-xl text-sm hover:bg-slate-50">{c.ativa?'Desativar':'Ativar'}</button>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+);
+
+// ══════════════════════════════════════════════════════════════
+// APP PRINCIPAL — gate de autenticação
+// ══════════════════════════════════════════════════════════════
+const App = () => {
+  const [authState, setAuth] = useState('loading');
+  const [user,  setUser]  = useState(null);
+  const [motos, setMotos] = useState([]);
+  const [concs, setConcs] = useState([]);
+  const [page,  setPage]  = useState('vitrine');
+  const [menu,  setMenu]  = useState(false);
+  const [toast, setToast] = useState(null);
+
+  // ── Inicialização: carrega tudo do localStorage ──────────────
+  useEffect(() => {
+    // Força atualização das contas demo (garante senha 123456 sempre)
+    const stored = LS.getUsers();
+    if (stored) {
+      const merged = DEMO_ACCOUNTS.map(demo => {
+        const existing = stored.find(u => u.id === demo.id);
+        // mantém dados extras de usuários cadastrados manualmente
+        return existing ? { ...existing, senha: demo.senha } : demo;
+      });
+      const novos = stored.filter(u => u.id > 4);
+      LS.saveUsers([...merged, ...novos]);
+    } else {
+      LS.saveUsers(DEMO_ACCOUNTS);
+    }
+    setMotos(LS.getMotos() || MOTOS0);
+    setConcs(LS.getConcs() || CONCS0);
+    const sess = LS.getSession();
+    // Splash mínimo de 2s para impacto da marca
+    setTimeout(() => {
+      if (sess) { setUser(sess); setAuth('app'); }
+      else setAuth('login');
+    }, 2000);
+  }, []);
+
+  // ── Auto-save: persiste sempre que motos ou concs mudam ──────
+  useEffect(() => { if (motos.length) LS.saveMotos(motos); }, [motos]);
+  useEffect(() => { if (concs.length) LS.saveConcs(concs); }, [concs]);
+
+  const [googleData, setGoogleData] = useState(null);
+
+  const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null),3000); };
+  const handleLogin    = (u) => { setUser(u); setAuth('app'); };
+  const handleLogout   = () => { LS.clearSession(); setUser(null); setAuth('login'); setPage('vitrine'); };
+  const goRegisterGoogle = (data) => { setGoogleData(data); setAuth('register'); };
+  const onCadastrar    = (m) => { setMotos(p=>[...p,m]); setPage('vitrine'); notify('Moto cadastrada com sucesso!'); };
+  const onAvancar      = (id,comp) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'em_negociacao',vendId:user.id,vend:user.nome,comprador:comp}:m)); notify('Interesse registrado!'); };
+  const onConcluir     = (id) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'concluido'}:m)); notify('Negociação concluída! Comissões registradas.'); };
+
+  if (authState==='loading') return (
+    <div className="fixed inset-0 flex items-center justify-center splash-out" style={{background:'#080f1e',zIndex:9999}}>
+      <div className="text-center revvo-fade-up">
+        <RevvoLogo size="xl" />
+        <div className="mt-4 h-px bg-[#f97316] mx-auto revvo-fade-in revvo-delay-1" style={{width:'120px'}} />
+        <p className="mt-4 text-xs tracking-[0.3em] uppercase text-gray-500 revvo-fade-in revvo-delay-2">
+          Intermediação de Veículos Seminovos
+        </p>
+      </div>
+    </div>
+  );
+  if (authState==='login')    return <LoginPage onLogin={handleLogin} onGoRegister={()=>{setGoogleData(null);setAuth('register');}} onGoRegisterGoogle={goRegisterGoogle} />;
+  if (authState==='register') return <RegisterPage onBack={()=>{setGoogleData(null);setAuth('login');}} onRegistered={handleLogin} googleData={googleData} />;
+
+  const NAV = [
+    {k:'vitrine',        l:'Vitrine',      i:'🏍️', roles:['super_admin','gerente','vendedor']},
+    {k:'cadastro',       l:'Cadastrar',    i:'➕', roles:['vendedor']},
+    {k:'negociacoes',    l:'Negociações',  i:'📋', roles:['super_admin','gerente','vendedor']},
+    {k:'comissoes',      l:'Comissões',    i:'💰', roles:['super_admin','gerente','vendedor']},
+    {k:'relatorio',      l:'Relatório',    i:'📊', roles:['super_admin','gerente']},
+    {k:'concessionarias',l:'Parceiros',    i:'🏢', roles:['super_admin']},
+  ].filter(n=>n.roles.includes(user.perfil));
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="sticky top-0 z-30 shadow-xl" style={{background:'#080f1e'}}>
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center flex-shrink-0">
+            <RevvoLogo size="sm" />
+          </div>
+          <nav className="hidden md:flex gap-1 flex-1 justify-center">
+            {NAV.map(n=>(
+              <button key={n.k} onClick={()=>setPage(n.k)}
+                className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${page===n.k?'bg-[#f97316] text-white':'text-blue-200 hover:bg-white/10'}`}>
+                {n.i} {n.l}
+              </button>
+            ))}
+          </nav>
+          <div className="relative">
+            <button onClick={()=>setMenu(!menu)} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-sm transition-colors">
+              <div className="w-7 h-7 bg-[#f97316] rounded-full flex items-center justify-center text-white font-bold text-xs">{user.nome[0]}</div>
+              <div className="hidden sm:block text-left"><p className="text-white text-xs font-semibold leading-none">{user.nome}</p><p className="text-blue-300 text-xs">{PERFIL[user.perfil]}</p></div>
+              <span className="text-blue-300 text-xs">▾</span>
+            </button>
+            {menu && (
+              <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 w-56 z-50">
+                <div className="px-4 py-3 border-b border-slate-100">
+                  <p className="font-bold text-gray-800 text-sm">{user.nome}</p>
+                  <p className="text-gray-400 text-xs">{user.email}</p>
+                  <p className="text-gray-400 text-xs">{PERFIL[user.perfil]} {user.conc&&`• ${user.conc}`}</p>
+                </div>
+                <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 font-medium">↩ Sair</button>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="md:hidden border-t border-white/10 px-3 py-2 flex gap-1 overflow-x-auto">
+          {NAV.map(n=>(
+            <button key={n.k} onClick={()=>setPage(n.k)}
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium ${page===n.k?'bg-[#f97316] text-white':'text-blue-200 hover:bg-white/10'}`}>
+              {n.i} {n.l}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 py-6" onClick={()=>menu&&setMenu(false)}>
+        {page==='vitrine'         && <Vitrine        motos={motos} user={user} onAvancar={onAvancar} onConcluir={onConcluir} />}
+        {page==='cadastro'        && <Cadastro        user={user} onSave={onCadastrar} />}
+        {page==='negociacoes'     && <Negociacoes     motos={motos} />}
+        {page==='comissoes'       && <Comissoes       motos={motos} user={user} />}
+        {page==='relatorio'       && <Relatorio       motos={motos} user={user} />}
+        {page==='concessionarias' && <Concessionarias concs={concs} motos={motos} onToggle={id=>setConcs(p=>p.map(c=>c.id===id?{...c,ativa:!c.ativa}:c))} />}
+      </main>
+
+      {toast && (
+        <div className="fixed bottom-5 right-5 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold z-50">
+          ✓ {toast}
+        </div>
+      )}
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
 </html>
