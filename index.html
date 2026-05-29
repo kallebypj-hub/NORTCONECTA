@@ -3,31 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>REVVO</title>
+  <title>FRENZZO</title>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>tailwind.config={theme:{extend:{colors:{primary:'#080f1e',secondary:'#f97316'}}}}</script>
+  <script>tailwind.config={theme:{extend:{colors:{primary:'#0a0a0a',secondary:'#ff4500'}}}}</script>
   <!-- Google Identity Services — substituir GOOGLE_CLIENT_ID quando tiver o Client ID -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <!-- Favicon: letra R com slash laranja -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23080f1e'/%3E%3Ctext x='3' y='25' font-family='Arial Black,sans-serif' font-size='22' font-weight='900' fill='white'%3ER%3C/text%3E%3Cline x1='10' y1='5' x2='20' y2='27' stroke='%23f97316' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <!-- Favicon: quadrado laranja com letra F em branco bold -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ff4500'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Arial Black,sans-serif' font-size='20' font-weight='900' fill='white'%3EF%3C/text%3E%3C/svg%3E">
   <style>
     *{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;}
     .sig-pad{touch-action:none;cursor:crosshair;}
     ::-webkit-scrollbar{width:6px;height:6px;}
     ::-webkit-scrollbar-track{background:#f1f5f9;}
     ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px;}
-    @keyframes revvoFadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
-    @keyframes revvoFadeIn{from{opacity:0}to{opacity:1}}
+    @keyframes frenzzo-fade-up{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes frenzzo-fade-in{from{opacity:0}to{opacity:1}}
     @keyframes splashOut{0%,70%{opacity:1}100%{opacity:0;pointer-events:none}}
-    .revvo-fade-up{animation:revvoFadeUp .7s cubic-bezier(.22,1,.36,1) forwards;}
-    .revvo-fade-in{animation:revvoFadeIn .5s ease forwards;}
+    .frenzzo-fade-up{animation:frenzzo-fade-up .7s cubic-bezier(.22,1,.36,1) forwards;}
+    .frenzzo-fade-in{animation:frenzzo-fade-in .5s ease forwards;}
     .splash-out{animation:splashOut 2s ease forwards;}
-    .revvo-delay-1{animation-delay:.15s;opacity:0;}
-    .revvo-delay-2{animation-delay:.3s;opacity:0;}
-    .revvo-delay-3{animation-delay:.45s;opacity:0;}
+    .frenzzo-delay-1{animation-delay:.15s;opacity:0;}
+    .frenzzo-delay-2{animation-delay:.3s;opacity:0;}
+    .frenzzo-delay-3{animation-delay:.45s;opacity:0;}
   </style>
 </head>
 <body class="bg-slate-50">
@@ -35,27 +35,33 @@
 <script type="text/babel">
 const { useState, useRef, useEffect, useCallback } = React;
 
-// ── Componente de logo reutilizável ──────────────────────────
-const RevvoLogo = ({ size='md', showSlogan=false }) => {
-  const sz = { xs:'text-xl', sm:'text-2xl', md:'text-3xl', lg:'text-5xl', xl:'text-7xl', '2xl':'text-8xl' }[size]||'text-3xl';
-  const slSz = { xs:'text-sm', sm:'text-base', md:'text-lg', lg:'text-2xl', xl:'text-4xl', '2xl':'text-5xl' }[size]||'text-lg';
-  return (
-    <div className="inline-flex flex-col items-center gap-0">
-      <div className={`font-black tracking-tighter text-white leading-none select-none ${sz}`}>
-        <span className="relative inline-block">
-          R
-          <span className={`absolute inset-0 flex items-center justify-center text-[#f97316] font-light pointer-events-none ${slSz}`}
-            style={{transform:'rotate(15deg) translateX(2px)',fontWeight:200,lineHeight:1}}>
-            /
-          </span>
-        </span>
-        EVVO<span className="text-[#f97316]" style={{marginLeft:'1px'}}>.</span>
+// ── Ícone hexagonal FRENZZO ───────────────────────────────────
+const HexIcon = ({ size=32 }) => (
+  <svg width={size} height={size} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <polygon points="20,2 35.5,11 35.5,29 20,38 4.5,29 4.5,11" fill="#ff4500"/>
+    <text x="20" y="27" textAnchor="middle" fontFamily="Arial Black,sans-serif" fontSize="16" fontWeight="900" fill="white">F</text>
+  </svg>
+);
+
+// ── Logo FRENZZO reutilizável ─────────────────────────────────
+// size sm/xs → inline (header); md+ → empilhado (login/splash)
+const FrenzzoLogo = ({ size='md' }) => {
+  const inline = size === 'sm' || size === 'xs';
+  const iconSz  = { xs:18, sm:26, md:36, lg:50, xl:72, '2xl':96 }[size] || 36;
+  const txtSz   = { xs:'text-base', sm:'text-xl', md:'text-2xl', lg:'text-4xl', xl:'text-6xl', '2xl':'text-7xl' }[size] || 'text-2xl';
+
+  if (inline) {
+    return (
+      <div className="inline-flex items-center gap-2 select-none">
+        <HexIcon size={iconSz} />
+        <span className={`font-black tracking-tight text-white leading-none ${txtSz}`}>FRENZZO</span>
       </div>
-      {showSlogan && (
-        <div className="mt-2">
-          <div className="h-px bg-[#f97316] opacity-80 w-full" />
-        </div>
-      )}
+    );
+  }
+  return (
+    <div className="inline-flex flex-col items-center gap-2 select-none">
+      <HexIcon size={iconSz} />
+      <span className={`font-black tracking-tight text-white leading-none ${txtSz}`}>FRENZZO</span>
     </div>
   );
 };
@@ -97,7 +103,7 @@ const fmtPlaca = (v) => v.replace(/[^A-Z0-9]/gi,'').toUpperCase().slice(0,7);
 // ══════════════════════════════════════════════════════════════
 // CPFs calculados com algoritmo real para as contas demo
 const DEMO_ACCOUNTS = [
-  { id:1, nome:'Carlos Admin',  cpf:'529.982.247-25', email:'admin@revvo.com', senha:'123456', tel:'(88) 99000-0001', codConc:'ADMIN', perfil:'super_admin', conc:null        },
+  { id:1, nome:'Carlos Admin',  cpf:'529.982.247-25', email:'admin@frenzzo.com', senha:'123456', tel:'(88) 99000-0001', codConc:'ADMIN', perfil:'super_admin', conc:null        },
   { id:2, nome:'Ana Lima',      cpf:'111.444.777-35', email:'ana@nortmotos.com',      senha:'123456', tel:'(88) 99000-0002', codConc:'1614410', perfil:'gerente',     conc:'NortMotos' },
   { id:3, nome:'Lucas Mendes',  cpf:'263.946.533-30', email:'lucas@nortmotos.com',    senha:'123456', tel:'(88) 99000-0003', codConc:'1614410', perfil:'vendedor',    conc:'NortMotos' },
   { id:4, nome:'Rafael Souza',  cpf:'801.382.872-04', email:'rafael@nortmotos.com',   senha:'123456', tel:'(88) 99000-0004', codConc:'1614410', perfil:'vendedor',    conc:'NortMotos' },
@@ -214,19 +220,19 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{background:'#080f1e'}}>
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{background:'#0a0a0a'}}>
       <div className="w-full max-w-sm">
         {/* Logo hero */}
-        <div className="text-center mb-10 revvo-fade-up">
-          <RevvoLogo size="xl" />
-          <div className="h-px bg-[#f97316] mx-auto mt-4 mb-4" style={{width:'100px',opacity:.9}} />
-          <p className="text-xs tracking-[0.28em] uppercase text-gray-500">
-            Intermediação de Veículos Seminovos
+        <div className="text-center mb-10 frenzzo-fade-up">
+          <FrenzzoLogo size="xl" />
+          <div className="h-px bg-[#ff4500] mx-auto mt-4 mb-4" style={{width:'100px',opacity:.9}} />
+          <p className="text-xs tracking-[0.28em] uppercase text-[#ff4500] font-medium">
+            Sua moto. Seu preço. Sem complicação.
           </p>
         </div>
 
-        <div className="bg-white rounded-3xl shadow-2xl p-8 revvo-fade-up revvo-delay-1">
-          <h2 className="text-xl font-bold text-[#080f1e] mb-6">Entrar na plataforma</h2>
+        <div className="bg-white rounded-3xl shadow-2xl p-8 frenzzo-fade-up frenzzo-delay-1">
+          <h2 className="text-xl font-bold text-[#0a0a0a] mb-6">Entrar na plataforma</h2>
 
           {/* Botão Google */}
           {GOOGLE_CLIENT_ID ? (
@@ -256,37 +262,37 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
           <form onSubmit={handle} className="space-y-4">
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">E-mail</label>
-              <input className="w-full mt-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#f97316] focus:ring-1 focus:ring-[#f97316]"
+              <input className="w-full mt-1 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff4500] focus:ring-1 focus:ring-[#ff4500]"
                 type="email" placeholder="seu@email.com" required value={email} onChange={e=>setEmail(e.target.value)} />
             </div>
             <div>
               <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha</label>
               <div className="relative mt-1">
-                <input className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#f97316] focus:ring-1 focus:ring-[#f97316] pr-12"
+                <input className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff4500] focus:ring-1 focus:ring-[#ff4500] pr-12"
                   type={showPass?'text':'password'} placeholder="••••••••" required value={senha} onChange={e=>setSenha(e.target.value)} />
                 <button type="button" onClick={()=>setShow(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">{showPass?'🙈':'👁️'}</button>
               </div>
             </div>
             {err && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{err}</p>}
             <button type="submit" disabled={loading}
-              className="w-full bg-[#f97316] text-white py-3.5 rounded-2xl font-bold text-base hover:bg-orange-600 transition-colors disabled:opacity-60 mt-2">
+              className="w-full bg-[#ff4500] text-white py-3.5 rounded-2xl font-bold text-base hover:bg-[#e03d00] transition-colors disabled:opacity-60 mt-2">
               {loading ? 'Verificando...' : 'Entrar'}
             </button>
           </form>
           <div className="mt-5 text-center">
             <p className="text-sm text-gray-400">Não tem conta?{' '}
-              <button onClick={onGoRegister} className="text-[#f97316] font-semibold hover:underline">Cadastre-se</button>
+              <button onClick={onGoRegister} className="text-[#ff4500] font-semibold hover:underline">Cadastre-se</button>
             </p>
           </div>
         </div>
 
         {/* Demo hint */}
-        <div className="mt-4 rounded-2xl p-4 text-xs revvo-fade-in revvo-delay-2" style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)'}}>
+        <div className="mt-4 rounded-2xl p-4 text-xs frenzzo-fade-in frenzzo-delay-2" style={{background:'rgba(255,255,255,0.05)',border:'1px solid rgba(255,255,255,0.08)'}}>
           <p className="font-bold text-white mb-2">Contas demo:</p>
-          {[['Lucas · Vendedor','lucas@nortmotos.com','123456'],['Ana · Gerente','ana@nortmotos.com','123456'],['Admin','admin@revvo.com','123456'],['Rafael · Vendedor','rafael@nortmotos.com','123456']].map(([n,e,s])=>(
+          {[['Lucas · Vendedor','lucas@nortmotos.com','123456'],['Ana · Gerente','ana@nortmotos.com','123456'],['Admin','admin@frenzzo.com','123456'],['Rafael · Vendedor','rafael@nortmotos.com','123456']].map(([n,e,s])=>(
             <button key={e} onClick={()=>{setEmail(e);setSenha(s);}}
               className="block w-full text-left py-1.5 hover:text-white transition-colors text-gray-500">
-              <span className="text-[#f97316] font-medium">{n}</span>  {e}
+              <span className="text-[#ff4500] font-medium">{n}</span>  {e}
             </button>
           ))}
         </div>
@@ -319,7 +325,7 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
     setF(p=>({...p,[k]:v}));
     setErros(p=>({...p,[k]:''}));
   };
-  const inp = (hasErr) => `w-full border ${hasErr?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#f97316]`;
+  const inp = (hasErr) => `w-full border ${hasErr?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff4500]`;
 
   const validar = () => {
     const e = {};
@@ -357,15 +363,15 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'#080f1e'}}>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'#0a0a0a'}}>
       <div className="w-full max-w-sm">
-        <div className="text-center mb-6 revvo-fade-up">
-          <RevvoLogo size="lg" />
+        <div className="text-center mb-6 frenzzo-fade-up">
+          <FrenzzoLogo size="lg" />
         </div>
         <div className="bg-white rounded-3xl shadow-2xl p-7">
           <div className="flex items-center gap-2 mb-5">
             <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
-            <h2 className="text-lg font-bold text-[#080f1e]">Criar conta de vendedor</h2>
+            <h2 className="text-lg font-bold text-[#0a0a0a]">Criar conta de vendedor</h2>
           </div>
           {viaGoogle && (
             <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700">
@@ -416,12 +422,12 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
             {/* ── Melhoria 3: checkbox marketing */}
             <label className="flex items-start gap-3 cursor-pointer pt-1 pb-1">
               <input type="checkbox" checked={marketing} onChange={e=>setMarketing(e.target.checked)}
-                className="mt-0.5 w-4 h-4 accent-[#f97316] flex-shrink-0" />
+                className="mt-0.5 w-4 h-4 accent-[#ff4500] flex-shrink-0" />
               <span className="text-sm text-gray-600 leading-snug">
-                Quero receber ofertas e novidades do REVVO
+                Quero receber ofertas e novidades do FRENZZO
               </span>
             </label>
-            <button type="submit" className="w-full bg-[#f97316] text-white py-3.5 rounded-2xl font-bold hover:bg-orange-600 transition-colors mt-1">
+            <button type="submit" className="w-full bg-[#ff4500] text-white py-3.5 rounded-2xl font-bold hover:bg-[#e03d00] transition-colors mt-1">
               Criar Conta
             </button>
           </form>
@@ -452,7 +458,7 @@ const PhotoSlot = ({ label, foto, onSelect, required }) => {
         </div>
       ) : (
         <div onClick={()=>ref.current.click()}
-          className="w-full h-28 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#f97316] hover:bg-orange-50 transition-colors">
+          className="w-full h-28 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-[#ff4500] hover:bg-orange-50 transition-colors">
           <span className="text-2xl mb-1">📷</span>
           <span className="text-xs text-gray-400">Toque para adicionar</span>
         </div>
@@ -576,19 +582,19 @@ const Breakdown = ({ pd }) => {
   const { precoFinal, bonus, onzePct, comissaoVenda, lucroApp } = calc(pd);
   return (
     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm">
-      <p className="font-bold text-[#080f1e] mb-3">Cálculo do Preço</p>
+      <p className="font-bold text-[#0a0a0a] mb-3">Cálculo do Preço</p>
       <div className="space-y-1.5">
         <RowD l="Preço desejado pelo dono" v={R(pd)} />
         <RowD l="+ Bônus de captação (fixo)" v={R(bonus)} vc="text-orange-500" />
         <RowD l="+ 11% sobre preço desejado" v={R(onzePct)} />
-        <div className="border-t border-blue-200 pt-2 mt-1 flex justify-between font-bold text-[#080f1e]">
+        <div className="border-t border-blue-200 pt-2 mt-1 flex justify-between font-bold text-[#0a0a0a]">
           <span>= Preço ao comprador</span><span className="text-lg">{R(precoFinal)}</span>
         </div>
       </div>
       <div className="mt-3 pt-3 border-t border-blue-200">
         <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Distribuição dos 11%</p>
         <RowD l="Comissão Vendedor B (1% do preço final)" v={R(comissaoVenda)} vc="text-emerald-600" />
-        <RowD l="Lucro App + Concessionária" v={R(lucroApp)} vc="text-[#080f1e]" />
+        <RowD l="Lucro App + Concessionária" v={R(lucroApp)} vc="text-[#0a0a0a]" />
       </div>
     </div>
   );
@@ -602,7 +608,7 @@ const SigPad = ({ onSign }) => {
   const ref = useRef(); const drawing = useRef(false); const [signed,setSigned] = useState(false);
   const pos = (e) => { const r=ref.current.getBoundingClientRect(); const s=e.touches?e.touches[0]:e; return [s.clientX-r.left,s.clientY-r.top]; };
   const start = (e) => { drawing.current=true; const ctx=ref.current.getContext('2d'); ctx.beginPath(); const [x,y]=pos(e); ctx.moveTo(x,y); };
-  const move  = (e) => { if(!drawing.current)return; e.preventDefault(); const ctx=ref.current.getContext('2d'); ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#080f1e'; const [x,y]=pos(e); ctx.lineTo(x,y);ctx.stroke();ctx.beginPath();ctx.moveTo(x,y); setSigned(true);onSign(true); };
+  const move  = (e) => { if(!drawing.current)return; e.preventDefault(); const ctx=ref.current.getContext('2d'); ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#0a0a0a'; const [x,y]=pos(e); ctx.lineTo(x,y);ctx.stroke();ctx.beginPath();ctx.moveTo(x,y); setSigned(true);onSign(true); };
   const stop  = () => { drawing.current=false; };
   const clear = () => { ref.current.getContext('2d').clearRect(0,0,500,120); setSigned(false); onSign(false); };
   return (
@@ -625,16 +631,16 @@ const ContratoModal = ({ m, tipo, onClose, onOk }) => {
       <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e=>e.stopPropagation()}>
         <div className="p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-bold text-[#080f1e]">{titles[tipo]}</h2>
+            <h2 className="text-lg font-bold text-[#0a0a0a]">{titles[tipo]}</h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
           </div>
           <div className="bg-slate-50 rounded-xl p-4 text-sm text-gray-700 space-y-3 mb-4 leading-relaxed border border-slate-100">
-            <p className="text-center font-bold text-[#080f1e] text-base">{titles[tipo].toUpperCase()}</p>
+            <p className="text-center font-bold text-[#0a0a0a] text-base">{titles[tipo].toUpperCase()}</p>
             <p><strong>VEÍCULO:</strong> {m.vei.marca} {m.vei.modelo}, ano {m.vei.ano}, placa <strong>{m.vei.placa}</strong>, Renavam {m.vei.renavam}.</p>
             {tipo==='intermediacao' && <>
               <p><strong>PROPRIETÁRIO:</strong> {m.prop.nome}, CPF {m.prop.cpf}.</p>
               <p><strong>VALOR DESEJADO:</strong> {R(m.pd)}, revertido como crédito na concessionária parceira.</p>
-              <p><strong>INTERMEDIAÇÃO:</strong> A REVVO atua exclusivamente como intermediária. O proprietário responde por vícios ocultos.</p>
+              <p><strong>INTERMEDIAÇÃO:</strong> A FRENZZO atua exclusivamente como intermediária. O proprietário responde por vícios ocultos.</p>
               <p><strong>BÔNUS DE CAPTAÇÃO:</strong> {R(m.bonus)} ao vendedor captador, incluído no preço ao comprador.</p>
               <p><strong>CONFIDENCIALIDADE:</strong> As partes mantêm sigilo sobre os termos desta operação.</p>
             </>}
@@ -645,7 +651,7 @@ const ContratoModal = ({ m, tipo, onClose, onOk }) => {
               <p><strong>TRANSFERÊNCIA:</strong> Prazo de 30 dias para transferência no DETRAN.</p>
             </>}
             {tipo==='honorarios' && <>
-              <p><strong>HONORÁRIOS:</strong> A REVVO recebeu {R(m.lucroApp+m.comissaoVenda)} pela intermediação.</p>
+              <p><strong>HONORÁRIOS:</strong> A FRENZZO recebeu {R(m.lucroApp+m.comissaoVenda)} pela intermediação.</p>
               <p><strong>NATUREZA:</strong> Valor de serviço de intermediação, não integra o preço do veículo.</p>
               <p>Data: {new Date().toLocaleDateString('pt-BR')}.</p>
             </>}
@@ -654,7 +660,7 @@ const ContratoModal = ({ m, tipo, onClose, onOk }) => {
           <div className="flex gap-3 mt-5">
             <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
             <button onClick={()=>{onOk(tipo);onClose();}} disabled={!ok}
-              className="flex-1 bg-[#080f1e] text-white py-2.5 rounded-xl disabled:opacity-40 text-sm font-semibold">
+              className="flex-1 bg-[#0a0a0a] text-white py-2.5 rounded-xl disabled:opacity-40 text-sm font-semibold">
               {tipo==='honorarios'?'✓ Gerar Recibo':'✓ Assinar'}
             </button>
           </div>
@@ -669,7 +675,7 @@ const MotoImg = ({ m, large }) => {
   const foto = m.fotos && m.fotos[0];
   if (foto) return <img src={foto} alt="" className={`w-full ${large?'h-56':'h-44'} object-cover`} />;
   return (
-    <div className={`w-full ${large?'h-56':'h-44'} bg-gradient-to-br from-[#080f1e] to-blue-800 flex items-center justify-center`}>
+    <div className={`w-full ${large?'h-56':'h-44'} bg-gradient-to-br from-[#0a0a0a] to-blue-800 flex items-center justify-center`}>
       <div className="text-center text-white opacity-80"><div className="text-4xl mb-1">🏍️</div><p className="text-sm font-bold">{m.vei.marca} {m.vei.modelo}</p></div>
     </div>
   );
@@ -701,7 +707,7 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir }) => {
         <div className="p-6">
           <div className="flex justify-between items-start mb-3">
             <div>
-              <h2 className="text-xl font-bold text-[#080f1e]">{m.vei.marca} {m.vei.modelo} {m.vei.ano}</h2>
+              <h2 className="text-xl font-bold text-[#0a0a0a]">{m.vei.marca} {m.vei.modelo} {m.vei.ano}</h2>
               <div className="flex items-center gap-2 mt-1"><Badge s={m.status}/><span className="text-gray-400 text-sm">{m.conc}</span></div>
             </div>
             <button onClick={onClose} className="text-gray-400 text-2xl leading-none">×</button>
@@ -718,7 +724,7 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir }) => {
           {fotos.some(Boolean) && (
             <div className="flex gap-2 mb-4 mt-2">
               {fotos.map((f,i) => f && (
-                <img key={i} src={f} onClick={()=>setFotoIdx(i)} className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 ${fotoIdx===i?'border-[#f97316]':'border-transparent'}`} />
+                <img key={i} src={f} onClick={()=>setFotoIdx(i)} className={`w-14 h-14 object-cover rounded-lg cursor-pointer border-2 ${fotoIdx===i?'border-[#ff4500]':'border-transparent'}`} />
               ))}
             </div>
           )}
@@ -754,10 +760,10 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir }) => {
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
-            {podeAvancar && <button onClick={()=>setInt(true)} className="bg-[#f97316] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-orange-600">🤝 Tenho um comprador</button>}
+            {podeAvancar && <button onClick={()=>setInt(true)} className="bg-[#ff4500] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#e03d00]">🤝 Tenho um comprador</button>}
             {podeConcluir && <>
-              <button onClick={()=>setContrato('intermediacao')} className="bg-[#080f1e] text-white px-3 py-2 rounded-xl text-sm hover:bg-[#1a2540]">📄 Contrato Proprietário</button>
-              <button onClick={()=>setContrato('comprador')} className="border border-[#080f1e] text-[#080f1e] px-3 py-2 rounded-xl text-sm hover:bg-blue-50">📋 Termo Comprador</button>
+              <button onClick={()=>setContrato('intermediacao')} className="bg-[#0a0a0a] text-white px-3 py-2 rounded-xl text-sm hover:bg-[#1a1a1a]">📄 Contrato Proprietário</button>
+              <button onClick={()=>setContrato('comprador')} className="border border-[#0a0a0a] text-[#0a0a0a] px-3 py-2 rounded-xl text-sm hover:bg-blue-50">📋 Termo Comprador</button>
               <button onClick={()=>setContrato('honorarios')} className="bg-emerald-600 text-white px-3 py-2 rounded-xl text-sm hover:bg-emerald-700">✅ Concluir + Recibo</button>
             </>}
             {m.status==='concluido' && <p className="text-emerald-600 font-semibold text-sm self-center">✓ Negociação concluída</p>}
@@ -768,21 +774,21 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir }) => {
       {interesseOpen && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={()=>setInt(false)}>
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl" onClick={e=>e.stopPropagation()}>
-            <h3 className="font-bold text-[#080f1e] text-lg mb-4">Registrar Comprador</h3>
+            <h3 className="font-bold text-[#0a0a0a] text-lg mb-4">Registrar Comprador</h3>
             <div className="space-y-3">
-              <input className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]" placeholder="Nome completo *" value={compForm.nome} onChange={e=>setComp(p=>({...p,nome:e.target.value}))} />
+              <input className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]" placeholder="Nome completo *" value={compForm.nome} onChange={e=>setComp(p=>({...p,nome:e.target.value}))} />
               <div>
-                <input className={`w-full border ${cpfErr?'border-red-400':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]`}
+                <input className={`w-full border ${cpfErr?'border-red-400':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]`}
                   placeholder="CPF * (000.000.000-00)" value={compForm.cpf}
                   onChange={e=>{setComp(p=>({...p,cpf:fmtCPF(e.target.value)}));setCpfErr('');}} />
                 {cpfErr && <p className="text-red-500 text-xs mt-1">{cpfErr}</p>}
                 {compForm.cpf.length===14 && validarCPF(compForm.cpf) && <p className="text-emerald-600 text-xs mt-1">✓ CPF válido</p>}
               </div>
-              <input className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]" placeholder="WhatsApp *" value={compForm.fone} onChange={e=>setComp(p=>({...p,fone:e.target.value}))} />
+              <input className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]" placeholder="WhatsApp *" value={compForm.fone} onChange={e=>setComp(p=>({...p,fone:e.target.value}))} />
             </div>
             <div className="flex gap-2 mt-4">
               <button onClick={()=>setInt(false)} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
-              <button disabled={!compForm.nome} onClick={confirmarInteresse} className="flex-1 bg-[#f97316] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">Confirmar</button>
+              <button disabled={!compForm.nome} onClick={confirmarInteresse} className="flex-1 bg-[#ff4500] text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">Confirmar</button>
             </div>
           </div>
         </div>
@@ -800,9 +806,9 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
   const list = motos.filter(m => (!busca || `${m.vei.marca} ${m.vei.modelo}`.toLowerCase().includes(busca.toLowerCase())) && (!filtSt || m.status===filtSt));
   return (
     <div>
-      <div className="mb-5"><h1 className="text-2xl font-bold text-[#080f1e]">Vitrine de Motos</h1><p className="text-gray-400 text-sm">{list.length} moto(s)</p></div>
+      <div className="mb-5"><h1 className="text-2xl font-bold text-[#0a0a0a]">Vitrine de Motos</h1><p className="text-gray-400 text-sm">{list.length} moto(s)</p></div>
       <div className="flex flex-wrap gap-3 mb-6">
-        <input className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#f97316]" placeholder="🔍 Buscar modelo..." value={busca} onChange={e=>setBusca(e.target.value)} />
+        <input className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]" placeholder="🔍 Buscar modelo..." value={busca} onChange={e=>setBusca(e.target.value)} />
         <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm" value={filtSt} onChange={e=>setFilt(e.target.value)}>
           <option value="">Todos os status</option>
           <option value="disponivel">Disponível</option>
@@ -818,7 +824,7 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
               <h3 className="font-bold text-gray-800 text-lg">{m.vei.marca} {m.vei.modelo}</h3>
               <p className="text-gray-400 text-sm">{m.vei.ano} • {m.vei.km.toLocaleString('pt-BR')} km • {m.conc}</p>
               <div className="mt-3 pt-3 border-t border-slate-50">
-                <p className="text-2xl font-bold text-[#080f1e]">{R(m.precoFinal)}</p>
+                <p className="text-2xl font-bold text-[#0a0a0a]">{R(m.precoFinal)}</p>
                 <p className="text-xs text-gray-400">Preço ao comprador</p>
               </div>
               <p className="text-xs text-gray-400 mt-1">Captação: {m.cap}</p>
@@ -897,8 +903,8 @@ const Cadastro = ({ user, onSave }) => {
   const pdNum = parseFloat(pd)||0;
   const fipeExcede = fipe.fipeRes && pdNum > 0 && pdNum > fipe.fipeRes.valor;
 
-  const inp = (err) => `w-full border ${err?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316]`;
-  const sel = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#f97316] bg-white";
+  const inp = (err) => `w-full border ${err?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]`;
+  const sel = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500] bg-white";
 
   const validar = () => {
     const e = {};
@@ -948,7 +954,7 @@ const Cadastro = ({ user, onSave }) => {
 
   return (
     <div className="max-w-2xl">
-      <div className="mb-6"><h1 className="text-2xl font-bold text-[#080f1e]">Cadastrar Moto</h1><p className="text-gray-400 text-sm">Todos os campos marcados com * são obrigatórios</p></div>
+      <div className="mb-6"><h1 className="text-2xl font-bold text-[#0a0a0a]">Cadastrar Moto</h1><p className="text-gray-400 text-sm">Todos os campos marcados com * são obrigatórios</p></div>
 
       {/* Erros no topo */}
       {Object.keys(erros).length>0 && (
@@ -1010,7 +1016,7 @@ const Cadastro = ({ user, onSave }) => {
           {/* Preço FIPE consultado */}
           {fipe.fipeRes && (
             <div className="mb-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm">
-              <p className="font-bold text-[#080f1e]">Tabela FIPE: <span className="text-[#f97316]">{fipe.fipeRes.label}</span></p>
+              <p className="font-bold text-[#0a0a0a]">Tabela FIPE: <span className="text-[#ff4500]">{fipe.fipeRes.label}</span></p>
               <p className="text-gray-500 text-xs">{fipe.fipeRes.marca} {fipe.fipeRes.modelo} — {fipe.fipeRes.ano}</p>
             </div>
           )}
@@ -1056,7 +1062,7 @@ const Cadastro = ({ user, onSave }) => {
           {erros.laudoAtencao && <p className="text-amber-700 text-sm mt-2 bg-amber-50 rounded-xl px-3 py-2">⚠️ {erros.laudoAtencao}</p>}
           <div className="mt-3">
             <label className="text-xs text-gray-500 font-medium">Observações adicionais</label>
-            <textarea className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm h-20 resize-none focus:outline-none focus:border-[#f97316]" placeholder="Descreva o estado geral..." value={obs} onChange={e=>setObs(e.target.value)} />
+            <textarea className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm h-20 resize-none focus:outline-none focus:border-[#ff4500]" placeholder="Descreva o estado geral..." value={obs} onChange={e=>setObs(e.target.value)} />
           </div>
         </Card>
 
@@ -1087,7 +1093,7 @@ const Cadastro = ({ user, onSave }) => {
         </Card>
 
         <button type="submit"
-          className="w-full bg-[#f97316] text-white py-4 rounded-2xl font-bold text-base hover:bg-orange-600 transition-colors shadow-lg">
+          className="w-full bg-[#ff4500] text-white py-4 rounded-2xl font-bold text-base hover:bg-[#e03d00] transition-colors shadow-lg">
           Cadastrar Moto
         </button>
       </form>
@@ -1105,7 +1111,7 @@ const Negociacoes = ({ motos }) => {
   ];
   return (
     <div>
-      <div className="mb-6"><h1 className="text-2xl font-bold text-[#080f1e]">Gestão de Negociações</h1><p className="text-gray-400 text-sm">Kanban de operações</p></div>
+      <div className="mb-6"><h1 className="text-2xl font-bold text-[#0a0a0a]">Gestão de Negociações</h1><p className="text-gray-400 text-sm">Kanban de operações</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {cols.map(col=>{
           const items = motos.filter(m=>m.status===col.key);
@@ -1120,7 +1126,7 @@ const Negociacoes = ({ motos }) => {
                   <div key={m.id} className="bg-slate-50 rounded-xl p-3 text-xs border border-slate-100">
                     <p className="font-bold text-gray-800">{m.vei.marca} {m.vei.modelo} {m.vei.ano}</p>
                     <p className="text-gray-400">{m.vei.placa}</p>
-                    <p className="text-[#080f1e] font-bold mt-1">{R(m.precoFinal)}</p>
+                    <p className="text-[#0a0a0a] font-bold mt-1">{R(m.precoFinal)}</p>
                     <div className="mt-1.5 space-y-0.5 text-gray-500">
                       <p>A: {m.cap}</p>
                       {m.vend && <p>B: {m.vend}</p>}
@@ -1149,9 +1155,9 @@ const Comissoes = ({ motos, user }) => {
   const tot=rows.reduce((s,r)=>s+r.valor,0), pago=rows.filter(r=>r.paga).reduce((s,r)=>s+r.valor,0), pend=tot-pago;
   return (
     <div>
-      <div className="mb-6"><h1 className="text-2xl font-bold text-[#080f1e]">Comissões</h1><p className="text-gray-400 text-sm">{user.perfil==='vendedor'?'Suas comissões':'Comissões da equipe'}</p></div>
+      <div className="mb-6"><h1 className="text-2xl font-bold text-[#0a0a0a]">Comissões</h1><p className="text-gray-400 text-sm">{user.perfil==='vendedor'?'Suas comissões':'Comissões da equipe'}</p></div>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        {[['Total Acumulado',R(tot),'text-[#080f1e]'],['Pendentes',R(pend),'text-amber-600'],['Pagas',R(pago),'text-emerald-600']].map(([l,v,c])=>(
+        {[['Total Acumulado',R(tot),'text-[#0a0a0a]'],['Pendentes',R(pend),'text-amber-600'],['Pagas',R(pago),'text-emerald-600']].map(([l,v,c])=>(
           <div key={l} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100"><p className="text-sm text-gray-400">{l}</p><p className={`text-2xl font-bold ${c}`}>{v}</p></div>
         ))}
       </div>
@@ -1169,7 +1175,7 @@ const Comissoes = ({ motos, user }) => {
               {user.perfil!=='vendedor'&&<td className="px-4 py-3 text-gray-700">{r.vendedor}</td>}
               <td className="px-4 py-3 text-gray-700 font-medium">{r.moto}</td>
               <td className="px-4 py-3 text-gray-400">{r.tipo}</td>
-              <td className="px-4 py-3 text-right font-bold text-[#080f1e]">{R(r.valor)}</td>
+              <td className="px-4 py-3 text-right font-bold text-[#0a0a0a]">{R(r.valor)}</td>
               <td className="px-4 py-3 text-center">
                 <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${r.paga?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700'}`}>{r.paga?'Paga':'Pendente'}</span>
               </td>
@@ -1188,12 +1194,12 @@ const Relatorio = ({ motos, user }) => {
   return (
     <div>
       <div className="mb-6 flex justify-between items-start flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold text-[#080f1e]">Relatório Mensal</h1><p className="text-gray-400 text-sm">Janeiro 2024 — {user.conc||'Todas as concessionárias'}</p></div>
-        <button className="bg-[#080f1e] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#1a2540]">⬇ Exportar PDF</button>
+        <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Relatório Mensal</h1><p className="text-gray-400 text-sm">Janeiro 2024 — {user.conc||'Todas as concessionárias'}</p></div>
+        <button className="bg-[#0a0a0a] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#1a1a1a]">⬇ Exportar PDF</button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {[['Negócios','text-[#080f1e]',conc.length,'text-3xl'],['Volume Total','text-[#080f1e]',R(vol),'text-xl'],['Comissões','text-amber-600',R(com),'text-xl'],['A Pagar App','text-[#f97316]',R(app),'text-xl border-l-4 border-[#f97316]']].map(([l,c,v,tc])=>(
-          <div key={l} className={`bg-white rounded-2xl p-5 shadow-sm border border-slate-100 ${tc.includes('border')?'border-l-4 border-l-[#f97316]':''}`}>
+        {[['Negócios','text-[#0a0a0a]',conc.length,'text-3xl'],['Volume Total','text-[#0a0a0a]',R(vol),'text-xl'],['Comissões','text-amber-600',R(com),'text-xl'],['A Pagar App','text-[#ff4500]',R(app),'text-xl border-l-4 border-[#ff4500]']].map(([l,c,v,tc])=>(
+          <div key={l} className={`bg-white rounded-2xl p-5 shadow-sm border border-slate-100 ${tc.includes('border')?'border-l-4 border-l-[#ff4500]':''}`}>
             <p className="text-xs text-gray-400 mb-1">{l}</p><p className={`font-bold ${c} ${tc.split(' ').filter(x=>x.startsWith('text-')).join(' ')}`}>{v}</p>
           </div>
         ))}
@@ -1214,21 +1220,21 @@ const Relatorio = ({ motos, user }) => {
               <td className="px-4 py-3 text-gray-500">{m.cap}</td>
               <td className="px-4 py-3 text-gray-500">{m.vend||'—'}</td>
               <td className="px-4 py-3 text-right font-medium">{R(m.precoFinal)}</td>
-              <td className="px-4 py-3 text-right font-bold text-[#f97316]">{R(m.lucroApp)}</td>
+              <td className="px-4 py-3 text-right font-bold text-[#ff4500]">{R(m.lucroApp)}</td>
             </tr>
           ))}</tbody>
           <tfoot className="bg-slate-50 border-t-2 border-slate-200"><tr>
             <td colSpan="3" className="px-4 py-3 font-bold text-gray-800">Total</td>
             <td className="px-4 py-3 text-right font-bold">{R(vol)}</td>
-            <td className="px-4 py-3 text-right font-bold text-[#f97316]">{R(app)}</td>
+            <td className="px-4 py-3 text-right font-bold text-[#ff4500]">{R(app)}</td>
           </tr></tfoot>
         </table></div>
       </div>
       {user.perfil==='super_admin' && (
-        <div className="bg-[#080f1e] rounded-2xl p-6 text-white">
+        <div className="bg-[#0a0a0a] rounded-2xl p-6 text-white">
           <h3 className="font-bold text-xl mb-1">Fatura — NortMotos — Janeiro 2024</h3>
           <p className="text-blue-300 text-sm mb-4">Intermediação de {conc.length} veículo(s)</p>
-          <p className="text-4xl font-bold text-[#f97316]">{R(app)}</p>
+          <p className="text-4xl font-bold text-[#ff4500]">{R(app)}</p>
           <p className="text-blue-300 text-sm mt-1">Vencimento: 31/01/2024</p>
         </div>
       )}
@@ -1240,8 +1246,8 @@ const Relatorio = ({ motos, user }) => {
 const Concessionarias = ({ concs, motos, onToggle }) => (
   <div>
     <div className="mb-6 flex justify-between items-center">
-      <div><h1 className="text-2xl font-bold text-[#080f1e]">Concessionárias Parceiras</h1><p className="text-gray-400 text-sm">{concs.length} parceira(s)</p></div>
-      <button className="bg-[#f97316] text-white px-4 py-2 rounded-xl text-sm hover:bg-orange-600">+ Nova Parceira</button>
+      <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Concessionárias Parceiras</h1><p className="text-gray-400 text-sm">{concs.length} parceira(s)</p></div>
+      <button className="bg-[#ff4500] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#e03d00]">+ Nova Parceira</button>
     </div>
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
       {concs.map(c=>{
@@ -1255,7 +1261,7 @@ const Concessionarias = ({ concs, motos, onToggle }) => (
             </div>
             <div className="grid grid-cols-3 gap-3 text-sm mb-4">
               {[['Total Motos',mc.length],['Concluídos',cc.length],['A Pagar',R(appTotal)]].map(([l,v])=>(
-                <div key={l} className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-gray-400 text-xs">{l}</p><p className="font-bold text-[#080f1e]">{v}</p></div>
+                <div key={l} className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-gray-400 text-xs">{l}</p><p className="font-bold text-[#0a0a0a]">{v}</p></div>
               ))}
             </div>
             <button onClick={()=>onToggle(c.id)} className="w-full border border-gray-200 text-gray-600 py-2 rounded-xl text-sm hover:bg-slate-50">{c.ativa?'Desativar':'Ativar'}</button>
@@ -1318,12 +1324,12 @@ const App = () => {
   const onConcluir     = (id) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'concluido'}:m)); notify('Negociação concluída! Comissões registradas.'); };
 
   if (authState==='loading') return (
-    <div className="fixed inset-0 flex items-center justify-center splash-out" style={{background:'#080f1e',zIndex:9999}}>
-      <div className="text-center revvo-fade-up">
-        <RevvoLogo size="xl" />
-        <div className="mt-4 h-px bg-[#f97316] mx-auto revvo-fade-in revvo-delay-1" style={{width:'120px'}} />
-        <p className="mt-4 text-xs tracking-[0.3em] uppercase text-gray-500 revvo-fade-in revvo-delay-2">
-          Intermediação de Veículos Seminovos
+    <div className="fixed inset-0 flex items-center justify-center splash-out" style={{background:'#0a0a0a',zIndex:9999}}>
+      <div className="text-center frenzzo-fade-up">
+        <FrenzzoLogo size="xl" />
+        <div className="mt-4 h-px bg-[#ff4500] mx-auto frenzzo-fade-in frenzzo-delay-1" style={{width:'120px'}} />
+        <p className="mt-4 text-xs tracking-[0.3em] uppercase text-[#ff4500] font-medium frenzzo-fade-in frenzzo-delay-2">
+          Sua moto. Seu preço. Sem complicação.
         </p>
       </div>
     </div>
@@ -1342,22 +1348,22 @@ const App = () => {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-30 shadow-xl" style={{background:'#080f1e'}}>
+      <header className="sticky top-0 z-30 shadow-xl" style={{background:'#0a0a0a'}}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center flex-shrink-0">
-            <RevvoLogo size="sm" />
+            <FrenzzoLogo size="sm" />
           </div>
           <nav className="hidden md:flex gap-1 flex-1 justify-center">
             {NAV.map(n=>(
               <button key={n.k} onClick={()=>setPage(n.k)}
-                className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${page===n.k?'bg-[#f97316] text-white':'text-blue-200 hover:bg-white/10'}`}>
+                className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors ${page===n.k?'bg-[#ff4500] text-white':'text-blue-200 hover:bg-white/10'}`}>
                 {n.i} {n.l}
               </button>
             ))}
           </nav>
           <div className="relative">
             <button onClick={()=>setMenu(!menu)} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-sm transition-colors">
-              <div className="w-7 h-7 bg-[#f97316] rounded-full flex items-center justify-center text-white font-bold text-xs">{user.nome[0]}</div>
+              <div className="w-7 h-7 bg-[#ff4500] rounded-full flex items-center justify-center text-white font-bold text-xs">{user.nome[0]}</div>
               <div className="hidden sm:block text-left"><p className="text-white text-xs font-semibold leading-none">{user.nome}</p><p className="text-blue-300 text-xs">{PERFIL[user.perfil]}</p></div>
               <span className="text-blue-300 text-xs">▾</span>
             </button>
@@ -1376,7 +1382,7 @@ const App = () => {
         <div className="md:hidden border-t border-white/10 px-3 py-2 flex gap-1 overflow-x-auto">
           {NAV.map(n=>(
             <button key={n.k} onClick={()=>setPage(n.k)}
-              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium ${page===n.k?'bg-[#f97316] text-white':'text-blue-200 hover:bg-white/10'}`}>
+              className={`flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium ${page===n.k?'bg-[#ff4500] text-white':'text-blue-200 hover:bg-white/10'}`}>
               {n.i} {n.l}
             </button>
           ))}
