@@ -1071,8 +1071,14 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
       <div className="mb-5">
         <div className="flex items-center gap-3 flex-wrap">
           <div>
-            <h1 className="text-2xl font-bold text-[#0a0a0a]">Vitrine de Motos</h1>
-            <p className="text-gray-400 text-sm">{list.length} moto(s)</p>
+            <h1 className="text-2xl font-bold text-[#0a0a0a]">
+              {isVendedor && !modoComprador ? 'Minhas Motos' : 'Vitrine Completa'}
+            </h1>
+            <p className="text-gray-400 text-sm">
+              {isVendedor && !modoComprador
+                ? `${list.length} moto(s) cadastrada(s) por você`
+                : `${list.length} moto(s) disponível(is)`}
+            </p>
           </div>
           {isVendedor && (
             <button
@@ -1083,15 +1089,10 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
                   : 'border-[#ff4500] text-[#ff4500] bg-transparent'
               }`}
             >
-              🔑 {modoComprador ? 'Minha Vitrine' : 'Modo Vitrine'}
+              {modoComprador ? '← Minhas Motos' : '🏪 Ver Vitrine Completa'}
             </button>
           )}
         </div>
-        {isVendedor && modoComprador && (
-          <div className="mt-3 px-4 py-2.5 rounded-xl text-sm font-medium" style={{background:'rgba(255,69,0,0.1)', color:'#cc3700', border:'1px solid rgba(255,69,0,0.2)'}}>
-            👁️ Modo Vitrine ativo — você está vendo como o comprador vê
-          </div>
-        )}
       </div>
       <div className="flex flex-wrap gap-3 mb-6">
         <input className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]" placeholder="🔍 Buscar modelo..." value={busca} onChange={e=>setBusca(e.target.value)} />
