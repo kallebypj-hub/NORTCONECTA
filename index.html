@@ -154,6 +154,8 @@ const LS = {
   saveMotos  : (m) => { try { localStorage.setItem('nc_motos', JSON.stringify(m)); } catch {} },
   getConcs   : () => { try { return JSON.parse(localStorage.getItem('nc_concs')) || null; } catch { return null; } },
   saveConcs  : (c) => { try { localStorage.setItem('nc_concs', JSON.stringify(c)); } catch {} },
+  getChats   : () => { try { return JSON.parse(localStorage.getItem('nc_chats')) || {}; } catch { return {}; } },
+  saveChats  : (c) => { try { localStorage.setItem('nc_chats', JSON.stringify(c)); } catch {} },
 };
 
 // ── Pricing ─────────────────────────────────────────────────
@@ -910,8 +912,125 @@ const MotoImg = ({ m, large }) => {
   );
 };
 
+// ── Chat de Ofertas por Moto ──────────────────────────────────
+const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) => {
+  const [texto,   setTexto]   = useState('');
+  const [selComp, setSelComp] = useState(null); // admin: compradorId selecionado
+
+  const key      = String(motoId);
+  const motoChat = (chats[key]) || {};
+  const isAdmin  = user.perfil === 'super_admin';
+  const isComp   = user.perfil === 'comprador';
+  const isVendNormal = user.perfil === 'vendedor' && !modoComprador;
+  if (isVendNormal) return null;
+
+  const ts = () => new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+
+  const enviar = (comprId, asAdmin) => {
+    if (!texto.trim()) return;
+    const cid  = String(comprId);
+    const prev = motoChat[cid] || [];
+    const nova = { autor: user.nome, texto: texto.trim(), hora: ts(), isAdmin: asAdmin };
+    const updChat = { ...motoChat, [cid]: [...prev, nova] };
+    setChats(p => { const n = { ...p, [key]: updChat }; LS.saveChats(n); return n; });
+    setTexto('');
+  };
+
+  const Bubble = ({ msg }) => (
+    <div className={`flex ${msg.isAdmin ? 'justify-start' : 'justify-end'}`}>
+      <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm leading-snug ${msg.isAdmin ? 'bg-[#0a0a0a] text-white rounded-tl-sm' : 'bg-[#ff4500] text-white rounded-tr-sm'}`}>
+        {msg.isAdmin && <p className="text-xs font-semibold opacity-60 mb-0.5">{msg.autor}</p>}
+        <p>{msg.texto}</p>
+        <p className="text-xs opacity-50 mt-0.5 text-right">{msg.hora}</p>
+      </div>
+    </div>
+  );
+
+  const InputRow = ({ onSend, placeholder, dark }) => (
+    <div className="flex gap-2 mt-2">
+      <input className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]"
+        placeholder={placeholder} value={texto} onChange={e => setTexto(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && onSend()} />
+      <button onClick={onSend}
+        className={`px-4 py-2 rounded-xl text-sm font-bold text-white transition-colors ${dark ? 'bg-[#0a0a0a] hover:bg-[#1a1a1a]' : 'bg-[#ff4500] hover:bg-[#e03d00]'}`}>➤</button>
+    </div>
+  );
+
+  /* ── Comprador ── */
+  if (isComp) {
+    const cid  = String(user.id);
+    const msgs = motoChat[cid] || [];
+    return (
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <p className="text-sm font-semibold text-gray-700 mb-2">💬 Fale com a FRENZZO</p>
+        <div className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 overflow-y-auto mb-2" style={{minHeight:'80px',maxHeight:'160px'}}>
+          {msgs.length === 0
+            ? <p className="text-gray-300 text-xs text-center py-3">Nenhuma mensagem. Envie sua oferta!</p>
+            : msgs.map((m,i) => <Bubble key={i} msg={m} />)}
+        </div>
+        <InputRow onSend={() => enviar(user.id, false)} placeholder="Faça uma oferta ou pergunta..." />
+      </div>
+    );
+  }
+
+  /* ── Admin ── */
+  if (isAdmin) {
+    const compradores = Object.entries(motoChat);
+    if (selComp !== null) {
+      const msgs = motoChat[selComp] || [];
+      return (
+        <div className="mt-5 border-t border-slate-100 pt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <button onClick={() => { setSelComp(null); setTexto(''); }}
+              className="text-gray-400 hover:text-gray-600 text-sm font-semibold">← Voltar</button>
+            <p className="text-sm font-semibold text-gray-700">Comprador #{selComp}</p>
+          </div>
+          <div className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 overflow-y-auto mb-2" style={{minHeight:'80px',maxHeight:'180px'}}>
+            {msgs.map((m,i) => <Bubble key={i} msg={m} />)}
+          </div>
+          <InputRow onSend={() => enviar(selComp, true)} placeholder="Responder..." dark />
+        </div>
+      );
+    }
+    return (
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <p className="text-sm font-semibold text-gray-700 mb-2">💬 Conversas ({compradores.length})</p>
+        {compradores.length === 0
+          ? <p className="text-gray-300 text-xs text-center py-3">Nenhuma conversa nesta moto</p>
+          : compradores.map(([cid, msgs]) => (
+            <button key={cid} onClick={() => setSelComp(cid)}
+              className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 rounded-xl px-4 py-3 mb-2 text-left transition-colors">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800">Comprador #{cid}</p>
+                <p className="text-xs text-gray-400 truncate">{msgs[msgs.length-1]?.texto}</p>
+              </div>
+              <span className="ml-3 bg-[#ff4500] text-white text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0">{msgs.length}</span>
+            </button>
+          ))}
+      </div>
+    );
+  }
+
+  /* ── Vendedor em modoComprador — somente leitura ── */
+  const compradores = Object.entries(motoChat);
+  if (compradores.length === 0) return null;
+  return (
+    <div className="mt-5 border-t border-slate-100 pt-4">
+      <p className="text-sm font-semibold text-gray-500 mb-2">💬 Conversas ({compradores.length}) — somente leitura</p>
+      {compradores.map(([cid, msgs]) => (
+        <div key={cid} className="bg-slate-50 rounded-xl px-4 py-3 mb-2">
+          <p className="text-xs font-semibold text-gray-400 mb-2">Comprador #{cid}</p>
+          <div className="flex flex-col gap-1.5">
+            {msgs.slice(-3).map((m,i) => <Bubble key={i} msg={m} />)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ── Modal detalhe moto ─────────────────────────────────────────
-const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = false }) => {
+const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = false, chats = {}, setChats = ()=>{} }) => {
   const [contrato,setContrato]   = useState(null);
   const [interesseOpen,setInt]   = useState(false);
   const [compForm,setComp]       = useState({nome:'',cpf:'',fone:''});
@@ -1025,6 +1144,8 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
             </>}
             {m.status==='concluido' && <p className="text-emerald-600 font-semibold text-sm self-center">✓ Negociação concluída</p>}
           </div>
+
+          <ChatOferta motoId={m.id} user={user} chats={chats} setChats={setChats} modoComprador={modoComprador} />
         </div>
       </div>
 
@@ -1056,7 +1177,7 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
 };
 
 // ── VITRINE ────────────────────────────────────────────────────
-const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
+const Vitrine = ({ motos, user, onAvancar, onConcluir, chats = {}, setChats = ()=>{} }) => {
   const [sel, setSel] = useState(null);
   const [busca, setBusca] = useState('');
   const [filtSt, setFilt] = useState('');
@@ -1123,7 +1244,7 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
           </div>
         ))}
       </div>
-      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} modoComprador={modoComprador} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} />}
+      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} modoComprador={modoComprador} chats={chats} setChats={setChats} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} />}
     </div>
   );
 };
@@ -1768,6 +1889,34 @@ const Concessionarias = ({ concs, motos, users=[], onToggle, onUpdateConcs }) =>
           );
         })}
       </div>
+
+      {/* Mensagens de Suporte — apenas super_admin */}
+      {(() => {
+        const msgs = (() => { try { return JSON.parse(localStorage.getItem('nc_suporte') || '[]'); } catch { return []; } })();
+        if (msgs.length === 0) return null;
+        return (
+          <div className="mt-10">
+            <div className="flex items-center gap-3 mb-4">
+              <h2 className="text-xl font-bold text-[#0a0a0a]">Mensagens de Suporte</h2>
+              <span className="bg-[#ff4500] text-white text-xs px-2 py-0.5 rounded-full font-bold">{msgs.length}</span>
+            </div>
+            <div className="space-y-3">
+              {[...msgs].reverse().map((m, i) => (
+                <div key={i} className="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-start mb-2 flex-wrap gap-2">
+                    <div>
+                      <p className="font-semibold text-gray-800">{m.nome}</p>
+                      <p className="text-xs text-gray-400">{m.email}</p>
+                    </div>
+                    <p className="text-xs text-gray-400">{new Date(m.data).toLocaleString('pt-BR')}</p>
+                  </div>
+                  <p className="text-sm text-gray-700 bg-slate-50 rounded-xl p-3 leading-relaxed">{m.mensagem}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
@@ -2089,6 +2238,117 @@ const TrocaSenhaObrigatoria = ({ user, onDone }) => {
 };
 
 // ══════════════════════════════════════════════════════════════
+// SUPORTE FLUTUANTE
+// ══════════════════════════════════════════════════════════════
+const FAQ_ITEMS = [
+  { icon:'🏍️', q:'Como funciona a consignação?', a:'Você cadastra sua moto e a FRENZZO cuida de tudo. Seu veículo fica exposto na vitrine da concessionária parceira e vendemos pelo melhor preço dentro da tabela FIPE.' },
+  { icon:'💰', q:'Como é calculado o valor?', a:'O preço de venda é sempre baseado na tabela FIPE, garantindo competitividade no mercado.' },
+  { icon:'📋', q:'Quais documentos são necessários?', a:'CRV/CRLV, CPF, RG e comprovante de residência. O veículo deve estar sem restrições de transferência.' },
+  { icon:'⏱️', q:'Qual o prazo médio de venda?', a:'Em média 15 a 30 dias após o cadastro na vitrine.' },
+  { icon:'🔑', q:'Como recebo o valor da minha moto?', a:'O valor é creditado diretamente na concessionária como entrada para um novo veículo.' },
+  { icon:'📞', q:'Dúvidas?', a:'Entre em contato pelo WhatsApp ou use o campo abaixo.' },
+];
+
+const SuporteWidget = ({ user }) => {
+  const [open,    setOpen]    = useState(false);
+  const [aba,     setAba]     = useState(0);
+  const [nome,    setNome]    = useState(user?.nome  || '');
+  const [email,   setEmail]   = useState(user?.email || '');
+  const [msg,     setMsg]     = useState('');
+  const [enviado, setEnviado] = useState(false);
+
+  const enviar = () => {
+    if (!msg.trim()) return;
+    const lst = (() => { try { return JSON.parse(localStorage.getItem('nc_suporte') || '[]'); } catch { return []; } })();
+    lst.push({ nome, email, mensagem: msg.trim(), data: new Date().toISOString(), userId: user?.id });
+    localStorage.setItem('nc_suporte', JSON.stringify(lst));
+    setMsg('');
+    setEnviado(true);
+    setTimeout(() => setEnviado(false), 4000);
+  };
+
+  return (
+    <>
+      {open && <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />}
+      <div className="fixed right-5 z-50 flex flex-col items-end gap-3" style={{bottom:'80px'}}>
+        {open && (
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden"
+            style={{width:'360px', maxHeight:'520px'}} onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100" style={{background:'#0a0a0a'}}>
+              <div className="flex items-center gap-2">
+                <HexIcon size={20} />
+                <p className="text-white font-bold text-sm">Central de Ajuda</p>
+              </div>
+              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-white text-xl leading-none">×</button>
+            </div>
+            {/* Abas */}
+            <div className="flex border-b border-slate-100">
+              {['Como Funciona','Fale Conosco'].map((t, i) => (
+                <button key={i} onClick={() => setAba(i)}
+                  className={`flex-1 py-2.5 text-xs font-semibold transition-colors border-b-2 ${aba === i ? 'text-[#ff4500] border-[#ff4500]' : 'text-gray-400 border-transparent hover:text-gray-600'}`}>
+                  {t}
+                </button>
+              ))}
+            </div>
+            {/* Conteúdo */}
+            <div className="overflow-y-auto" style={{maxHeight:'400px'}}>
+              {aba === 0 && (
+                <div className="p-4 space-y-2">
+                  {FAQ_ITEMS.map((item, i) => (
+                    <div key={i} className="bg-slate-50 rounded-xl p-3">
+                      <p className="text-sm font-semibold text-[#0a0a0a] mb-1">{item.icon} {item.q}</p>
+                      <p className="text-xs text-gray-500 leading-relaxed">{item.a}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {aba === 1 && (
+                <div className="p-4 space-y-3">
+                  {enviado ? (
+                    <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 text-center">
+                      <p className="text-emerald-600 font-bold text-sm">✓ Mensagem enviada!</p>
+                      <p className="text-emerald-500 text-xs mt-1">Retornaremos em breve.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome</label>
+                        <input className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]"
+                          value={nome} onChange={e => setNome(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">E-mail</label>
+                        <input className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]"
+                          type="email" value={email} onChange={e => setEmail(e.target.value)} />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mensagem</label>
+                        <textarea className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm h-24 resize-none focus:outline-none focus:border-[#ff4500]"
+                          placeholder="Como podemos ajudar?" value={msg} onChange={e => setMsg(e.target.value)} />
+                      </div>
+                      <button onClick={enviar} disabled={!msg.trim()}
+                        className="w-full bg-[#ff4500] text-white py-2.5 rounded-xl text-sm font-bold hover:bg-[#e03d00] transition-colors disabled:opacity-40">
+                        Enviar Mensagem
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        <button onClick={() => setOpen(v => !v)}
+          className="w-14 h-14 rounded-full shadow-2xl flex items-center justify-center text-2xl transition-transform hover:scale-110 active:scale-95"
+          style={{background:'#ff4500', color:'white'}}>
+          💬
+        </button>
+      </div>
+    </>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
 // APP PRINCIPAL — gate de autenticação
 // ══════════════════════════════════════════════════════════════
 const App = () => {
@@ -2099,6 +2359,7 @@ const App = () => {
   const [page,  setPage]  = useState('vitrine');
   const [menu,  setMenu]  = useState(false);
   const [toast, setToast] = useState(null);
+  const [chats, setChats] = useState(() => LS.getChats());
 
   // ── Inicialização: carrega tudo do localStorage ──────────────
   useEffect(() => {
@@ -2127,9 +2388,10 @@ const App = () => {
     }, 2000);
   }, []);
 
-  // ── Auto-save: persiste sempre que motos ou concs mudam ──────
+  // ── Auto-save: persiste sempre que motos, concs ou chats mudam ──
   useEffect(() => { if (motos.length) LS.saveMotos(motos); }, [motos]);
   useEffect(() => { if (concs.length) LS.saveConcs(concs); }, [concs]);
+  useEffect(() => { LS.saveChats(chats); }, [chats]);
 
   const [googleData, setGoogleData] = useState(null);
 
@@ -2225,7 +2487,7 @@ const App = () => {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-6" onClick={()=>menu&&setMenu(false)}>
-        {page==='vitrine'         && <Vitrine        motos={motos} user={user} onAvancar={onAvancar} onConcluir={onConcluir} />}
+        {page==='vitrine'         && <Vitrine        motos={motos} user={user} onAvancar={onAvancar} onConcluir={onConcluir} chats={chats} setChats={setChats} />}
         {page==='cadastro'        && <Cadastro        user={user} onSave={onCadastrar} />}
         {page==='negociacoes'     && <Negociacoes     motos={motos} />}
         {page==='comissoes'       && <Comissoes       motos={motos} user={user} />}
@@ -2242,6 +2504,7 @@ const App = () => {
           ✓ {toast}
         </div>
       )}
+      <SuporteWidget user={user} />
     </div>
   );
 };
