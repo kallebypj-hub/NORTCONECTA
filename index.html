@@ -1053,33 +1053,47 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
 
 // ── VITRINE ────────────────────────────────────────────────────
 const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
-  const [sel,setSel]                   = useState(null);
-  const [busca,setBusca]               = useState('');
-  const [filtSt,setFilt]               = useState('');
-  const [modoComprador,setModoComprador] = useState(false);
+  const [sel, setSel] = useState(null);
+  const [busca, setBusca] = useState('');
+  const [filtSt, setFilt] = useState('');
+  const [modoComprador, setModoComprador] = useState(false);
+
   const isVendedor = user.perfil === 'vendedor';
-  const listaBase  = isVendedor && !modoComprador ? motos.filter(m => m.capId === user.id) : motos;
-  const list = listaBase.filter(m => (!busca || `${m.vei.marca} ${m.vei.modelo}`.toLowerCase().includes(busca.toLowerCase())) && (!filtSt || m.status===filtSt));
+
+  const list = motos.filter(m => {
+    const porPerfil = isVendedor && !modoComprador ? m.capId === user.id : true;
+    const porBusca = !busca || `${m.vei.marca} ${m.vei.modelo}`.toLowerCase().includes(busca.toLowerCase());
+    const porStatus = !filtSt || m.status === filtSt;
+    return porPerfil && porBusca && porStatus;
+  });
   return (
     <div>
-      <div className="mb-5 flex items-center gap-3 flex-wrap">
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold text-[#0a0a0a]">Vitrine de Motos</h1>
-          <p className="text-gray-400 text-sm">{list.length} moto(s)</p>
+      <div className="mb-5">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold text-[#0a0a0a]">Vitrine de Motos</h1>
+            <p className="text-gray-400 text-sm">{list.length} moto(s)</p>
+          </div>
+          {isVendedor && (
+            <button
+              onClick={() => setModoComprador(!modoComprador)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-sm font-semibold border transition-colors ${
+                modoComprador
+                  ? 'bg-[#ff4500] text-white border-[#ff4500]'
+                  : 'border-[#ff4500] text-[#ff4500] bg-transparent'
+              }`}
+            >
+              🔑 {modoComprador ? 'Minha Vitrine' : 'Modo Vitrine'}
+            </button>
+          )}
         </div>
-        {isVendedor && (
-          <button
-            onClick={() => setModoComprador(v => !v)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm border transition-colors ${
-              modoComprador
-                ? 'bg-[#ff4500] text-white border-[#ff4500]'
-                : 'bg-transparent text-[#ff4500] border-[#ff4500] hover:bg-[#ff4500]/10'
-            }`}>
-            🔑 Modo Vitrine
-          </button>
+        {isVendedor && modoComprador && (
+          <div className="mt-3 px-4 py-2.5 rounded-xl text-sm font-medium" style={{background:'rgba(255,69,0,0.1)', color:'#cc3700', border:'1px solid rgba(255,69,0,0.2)'}}>
+            👁️ Modo Vitrine ativo — você está vendo como o comprador vê
+          </div>
         )}
       </div>
-      <div className="flex flex-wrap gap-3 mb-3">
+      <div className="flex flex-wrap gap-3 mb-6">
         <input className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]" placeholder="🔍 Buscar modelo..." value={busca} onChange={e=>setBusca(e.target.value)} />
         <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm" value={filtSt} onChange={e=>setFilt(e.target.value)}>
           <option value="">Todos os status</option>
@@ -1088,11 +1102,6 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
           <option value="concluido">Concluído</option>
         </select>
       </div>
-      {isVendedor && modoComprador && (
-        <div className="mb-4 bg-orange-50 border border-orange-200 rounded-xl px-4 py-2.5 text-sm text-orange-700 font-medium">
-          👁️ Modo Vitrine ativo — você está vendo como o comprador vê
-        </div>
-      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {list.map(m=>(
           <div key={m.id} onClick={()=>setSel(m)} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all">
@@ -1109,7 +1118,7 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir }) => {
           </div>
         ))}
       </div>
-      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} modoComprador={modoComprador} />}
+      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} modoComprador={modoComprador} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} />}
     </div>
   );
 };
