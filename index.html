@@ -109,6 +109,15 @@ const fmtCPF = (v) => {
 };
 const fmtPlaca = (v) => v.replace(/[^A-Z0-9]/gi,'').toUpperCase().slice(0,7);
 
+// Máscara telefone brasileiro: (00) 00000-0000
+const fmtTel = (v) => {
+  const d = v.replace(/\D/g,'').slice(0,11);
+  if (d.length <= 2)  return `(${d}`;
+  if (d.length <= 7)  return `(${d.slice(0,2)}) ${d.slice(2)}`;
+  if (d.length <= 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
+  return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7,11)}`;
+};
+
 // ══════════════════════════════════════════════════════════════
 // MELHORIA 1 — Auth via localStorage
 // ══════════════════════════════════════════════════════════════
@@ -182,7 +191,7 @@ const CONCS0 = [{ id:1, nome:'NortMotos', cidade:'Sobral', uf:'CE', ativa:true, 
 
 const ST_LABEL = { disponivel:'Disponível', em_negociacao:'Em Negociação', aguardando_assinatura:'Aguard. Assinatura', concluido:'Concluído' };
 const ST_CLS   = { disponivel:'bg-emerald-100 text-emerald-800', em_negociacao:'bg-amber-100 text-amber-800', aguardando_assinatura:'bg-blue-100 text-blue-800', concluido:'bg-slate-100 text-slate-600' };
-const PERFIL   = { super_admin:'Super Admin', gerente:'Gerente', vendedor:'Vendedor' };
+const PERFIL   = { super_admin:'Super Admin', gerente:'Gerente', vendedor:'Vendedor', comprador:'Comprador' };
 const Badge = ({s}) => <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${ST_CLS[s]}`}>{ST_LABEL[s]}</span>;
 
 // ══════════════════════════════════════════════════════════════
@@ -353,132 +362,191 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
 // MELHORIA 1 — Tela de Cadastro de Vendedor
 // ══════════════════════════════════════════════════════════════
 const RegisterPage = ({ onBack, onRegistered, googleData }) => {
-  // Se veio do Google, pré-preenche nome e e-mail (e senha não é necessária)
-  const viaGoogle = !!googleData;
-  const [f, setF] = useState({
-    nome:    googleData?.nome  || '',
-    cpf:     '',
-    email:   googleData?.email || '',
-    senha:   viaGoogle ? '___GOOGLE___' : '',
-    tel:     '',
-    codConc: '',
+  const viaGoogle  = !!googleData;
+  const [tipo, setTipo] = useState(null); // null | 'comprador' | 'vendedor'
+  const [f, setF]  = useState({
+    nome: googleData?.nome||'', cpf:'', email: googleData?.email||'',
+    senha: viaGoogle?'___GOOGLE___':'', tel:'', dataNasc:'', codConc:'',
   });
-  const [marketing, setMarketing] = useState(true); // ── Melhoria 3
+  const [marketing, setMarketing] = useState(true);
   const [erros, setErros] = useState({});
-  const [ok, setOk]       = useState('');
+  const [ok, setOk] = useState('');
+  const inp = (e) => `w-full border ${e?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff4500]`;
 
   const up = (k) => (e) => {
     let v = e.target.value;
     if (k==='cpf') v = fmtCPF(v);
+    if (k==='tel') v = fmtTel(v);
     setF(p=>({...p,[k]:v}));
     setErros(p=>({...p,[k]:''}));
   };
-  const inp = (hasErr) => `w-full border ${hasErr?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff4500]`;
 
   const validar = () => {
     const e = {};
-    if (!f.nome.trim() || f.nome.trim().split(' ').length < 2) e.nome = 'Informe nome completo (nome e sobrenome).';
-    if (!validarCPF(f.cpf)) e.cpf = 'CPF inválido. Verifique os dígitos.';
-    if (!f.email.includes('@')) e.email = 'E-mail inválido.';
-    if (!viaGoogle && f.senha.length < 6) e.senha = 'Senha deve ter ao menos 6 caracteres.';
-    if (!f.tel.trim()) e.tel = 'Informe seu telefone.';
-    // Feature 5: valida contra CONC_CODES estático E concs dinâmicas do localStorage
-    const concsLS = LS.getConcs() || [];
-    const codigoValido = CONC_CODES[f.codConc.trim()] ||
-      concsLS.some(c => c.codigo === f.codConc.trim() && c.ativa);
-    if (!codigoValido) e.codConc = 'Código inválido. Entre em contato com o administrador.';
+    if (!f.nome.trim() || f.nome.trim().split(' ').length < 2) e.nome='Informe nome completo.';
+    if (!validarCPF(f.cpf)) e.cpf='CPF inválido.';
+    if (!f.email.includes('@')) e.email='E-mail inválido.';
+    if (!viaGoogle && f.senha.length < 6) e.senha='Senha deve ter ao menos 6 caracteres.';
+    if (!f.tel.replace(/\D/g,'') || f.tel.replace(/\D/g,'').length < 10) e.tel='Telefone inválido.';
+    if (tipo==='comprador') {
+      if (!f.dataNasc) e.dataNasc='Data de nascimento obrigatória.';
+    } else {
+      const concsLS = LS.getConcs()||[];
+      const codigoOk = CONC_CODES[f.codConc.trim()] || concsLS.some(c=>c.codigo===f.codConc.trim()&&c.ativa);
+      if (!codigoOk) e.codConc='Código inválido. Entre em contato com o administrador.';
+    }
     setErros(e);
-    return Object.keys(e).length === 0;
+    return Object.keys(e).length===0;
   };
 
   const handle = (e) => {
     e.preventDefault();
     if (!validar()) return;
-    const users = LS.getUsers() || [...DEMO_ACCOUNTS];
-    if (users.find(u => u.email.toLowerCase()===f.email.toLowerCase())) {
-      setErros(p=>({...p, email:'Este e-mail já está cadastrado.'}));
-      return;
+    const users = LS.getUsers()||[...DEMO_ACCOUNTS];
+    if (users.find(u=>u.email.toLowerCase()===f.email.toLowerCase())) {
+      setErros(p=>({...p,email:'E-mail já cadastrado.'})); return;
     }
-    const code     = f.codConc.trim();
-    const concInfo = CONC_CODES[code];
+    let perfil='comprador', conc=null, codConc='';
+    if (tipo==='vendedor') {
+      const code = f.codConc.trim();
+      const ci   = CONC_CODES[code] || (()=>{
+        const c=(LS.getConcs()||[]).find(c=>c.codigo===code&&c.ativa);
+        return c?{perfil:'vendedor',nome:c.nome}:null;
+      })();
+      perfil=ci?.perfil||'vendedor'; conc=ci?.nome||null; codConc=code;
+    }
     const novoUser = {
-      id: Date.now(), nome: f.nome.trim(), cpf: f.cpf,
-      email: f.email.toLowerCase(), senha: f.senha, tel: f.tel, codConc: code,
-      perfil: concInfo.perfil, conc: concInfo.nome || null,
-      googleId: googleData?.googleId || null,
-      marketing,
-      dataCadastro: new Date().toISOString().split('T')[0],
-      mustChangePassword: false,
+      id:Date.now(), nome:f.nome.trim(), cpf:f.cpf, email:f.email.toLowerCase(),
+      senha:f.senha, tel:f.tel, codConc, perfil, conc,
+      googleId:googleData?.googleId||null, marketing,
+      dataNasc:f.dataNasc||null,
+      dataCadastro:new Date().toISOString().split('T')[0],
+      mustChangePassword:false,
     };
-    LS.saveUsers([...users, novoUser]);
+    LS.saveUsers([...users,novoUser]);
     setOk('Conta criada! Redirecionando...');
-    setTimeout(() => { LS.saveSession(novoUser); onRegistered(novoUser); }, 1200);
+    setTimeout(()=>{ LS.saveSession(novoUser); onRegistered(novoUser); },1200);
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'#0a0a0a'}}>
+  // ── Tela 1: escolha do tipo ────────────────────────────────
+  if (!tipo) return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{background:'#0a0a0a'}}>
       <div className="w-full max-w-sm">
-        <div className="text-center mb-6 frenzzo-fade-up">
+        <div className="text-center mb-10 frenzzo-fade-up">
           <FrenzzoLogo size="lg" />
+          <p className="mt-4 text-white text-lg font-bold">Crie sua conta</p>
+          <p className="text-gray-500 text-sm mt-1">Qual é o seu perfil?</p>
         </div>
+        <div className="space-y-4 frenzzo-fade-up frenzzo-delay-1">
+          {[
+            { t:'comprador', icon:'🛒', title:'Sou Comprador', desc:'Quero encontrar uma moto seminova com o melhor preço.' },
+            { t:'vendedor',  icon:'🏪', title:'Sou Vendedor',  desc:'Trabalho em uma concessionária parceira FRENZZO.' },
+          ].map(({t,icon,title,desc})=>(
+            <button key={t} onClick={()=>setTipo(t)}
+              className="w-full text-left p-5 rounded-2xl border-2 border-white/10 hover:border-[#ff4500] transition-all group"
+              style={{background:'rgba(255,255,255,0.05)'}}>
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-[#ff4500]/20 flex items-center justify-center text-2xl group-hover:bg-[#ff4500]/30 transition-colors flex-shrink-0">
+                  {icon}
+                </div>
+                <div>
+                  <p className="font-bold text-white text-base">{title}</p>
+                  <p className="text-gray-400 text-xs mt-0.5 leading-snug">{desc}</p>
+                </div>
+                <span className="ml-auto text-gray-600 group-hover:text-[#ff4500] text-xl transition-colors">›</span>
+              </div>
+            </button>
+          ))}
+        </div>
+        <button onClick={onBack} className="w-full text-center text-gray-500 text-sm mt-6 hover:text-gray-300 transition-colors">
+          ← Voltar ao login
+        </button>
+      </div>
+    </div>
+  );
+
+  // ── Tela 2: formulário por tipo ───────────────────────────
+  const tipoLabel = tipo==='comprador'?'Comprador':'Vendedor';
+  const tipoIcon  = tipo==='comprador'?'🛒':'🏪';
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 overflow-y-auto" style={{background:'#0a0a0a'}}>
+      <div className="w-full max-w-sm py-6">
+        <div className="text-center mb-6 frenzzo-fade-up"><FrenzzoLogo size="lg" /></div>
         <div className="bg-white rounded-3xl shadow-2xl p-7">
-          <div className="flex items-center gap-2 mb-5">
-            <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-xl">←</button>
-            <h2 className="text-lg font-bold text-[#0a0a0a]">Criar conta de vendedor</h2>
+          <div className="flex items-center gap-3 mb-5">
+            <button onClick={()=>setTipo(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">←</button>
+            <div className="flex items-center gap-2">
+              <span>{tipoIcon}</span>
+              <h2 className="text-lg font-bold text-[#0a0a0a]">{tipoLabel} — Criar conta</h2>
+            </div>
           </div>
+
           {viaGoogle && (
             <div className="mb-4 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 text-sm text-blue-700">
               <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-              Conta Google detectada. Complete o cadastro abaixo.
+              Google detectado. Complete os campos obrigatórios.
             </div>
           )}
           {ok && <div className="mb-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-xl px-4 py-3">{ok}</div>}
+
           <form onSubmit={handle} className="space-y-3">
+            {/* Nome */}
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome completo</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nome completo *</label>
               <input className={inp(erros.nome)} placeholder="João da Silva" value={f.nome} onChange={up('nome')} />
               {erros.nome && <p className="text-red-500 text-xs mt-1">{erros.nome}</p>}
             </div>
+            {/* CPF — sempre manual */}
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">CPF</label>
-              <input className={inp(erros.cpf)} placeholder="000.000.000-00" value={f.cpf} onChange={up('cpf')} />
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">CPF *</label>
+              <input className={inp(erros.cpf)} placeholder="000.000.000-00" value={f.cpf} onChange={up('cpf')} inputMode="numeric" />
               {erros.cpf && <p className="text-red-500 text-xs mt-1">{erros.cpf}</p>}
               {f.cpf.length===14 && validarCPF(f.cpf) && <p className="text-emerald-600 text-xs mt-1">✓ CPF válido</p>}
             </div>
+            {/* E-mail */}
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">E-mail</label>
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">E-mail *</label>
               <input className={inp(erros.email)} type="email" placeholder="seu@email.com"
                 value={f.email} onChange={up('email')} readOnly={viaGoogle} />
               {erros.email && <p className="text-red-500 text-xs mt-1">{erros.email}</p>}
             </div>
+            {/* Senha */}
             {!viaGoogle && (
               <div>
-                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha (mín. 6 caracteres)</label>
-                <input className={inp(erros.senha)} type="password" placeholder="••••••••" value={f.senha} onChange={up('senha')} />
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha *</label>
+                <input className={inp(erros.senha)} type="password" placeholder="Mín. 6 caracteres" value={f.senha} onChange={up('senha')} />
                 {erros.senha && <p className="text-red-500 text-xs mt-1">{erros.senha}</p>}
               </div>
             )}
+            {/* Telefone — sempre manual, com máscara */}
             <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Telefone / WhatsApp</label>
-              <input className={inp(erros.tel)} placeholder="(88) 99999-0000" value={f.tel} onChange={up('tel')} />
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Telefone / WhatsApp *</label>
+              <input className={inp(erros.tel)} placeholder="(00) 00000-0000" value={f.tel} onChange={up('tel')} inputMode="numeric" />
               {erros.tel && <p className="text-red-500 text-xs mt-1">{erros.tel}</p>}
             </div>
-            {/* ── Melhoria 2: código real */}
-            <div>
-              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Código da Concessionária *</label>
-              <input className={inp(erros.codConc)} placeholder="Ex: 1614410" value={f.codConc} onChange={up('codConc')} />
-              {erros.codConc
-                ? <p className="text-red-500 text-xs mt-1">{erros.codConc}</p>
-                : <p className="text-gray-400 text-xs mt-1">Solicite o código ao gerente da sua loja.</p>
-              }
-            </div>
-            {/* ── Melhoria 3: checkbox marketing */}
-            <label className="flex items-start gap-3 cursor-pointer pt-1 pb-1">
+            {/* Campos específicos por tipo */}
+            {tipo==='comprador' && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Data de nascimento *</label>
+                <input className={inp(erros.dataNasc)} type="date" value={f.dataNasc} onChange={up('dataNasc')} />
+                {erros.dataNasc && <p className="text-red-500 text-xs mt-1">{erros.dataNasc}</p>}
+              </div>
+            )}
+            {tipo==='vendedor' && (
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Código da Concessionária *</label>
+                <input className={inp(erros.codConc)} placeholder="Ex: 1614410" value={f.codConc} onChange={up('codConc')} inputMode="numeric" />
+                {erros.codConc
+                  ? <p className="text-red-500 text-xs mt-1">{erros.codConc}</p>
+                  : <p className="text-gray-400 text-xs mt-1">Solicite o código ao gerente da sua loja.</p>}
+              </div>
+            )}
+            {/* Marketing */}
+            <label className="flex items-start gap-3 cursor-pointer pt-1">
               <input type="checkbox" checked={marketing} onChange={e=>setMarketing(e.target.checked)}
                 className="mt-0.5 w-4 h-4 accent-[#ff4500] flex-shrink-0" />
-              <span className="text-sm text-gray-600 leading-snug">
-                Quero receber ofertas e novidades do FRENZZO
-              </span>
+              <span className="text-sm text-gray-600 leading-snug">Quero receber ofertas e novidades do FRENZZO</span>
             </label>
             <button type="submit" className="w-full bg-[#ff4500] text-white py-3.5 rounded-2xl font-bold hover:bg-[#e03d00] transition-colors mt-1">
               Criar Conta
@@ -929,9 +997,28 @@ const Cadastro = ({ user, onSave }) => {
   // Erros gerais
   const [erros,setErros] = useState({});
 
+  // Ano (select estático 2026→2000)
+  const [ano, setAno] = useState('');
+  const ANOS = Array.from({length:27},(_,i)=>2026-i); // [2026..2000]
+
   // FIPE
   const fipe = useFIPE();
   const [fipeAviso,setFipeAviso] = useState('');
+
+  // Auto-seleciona Honda quando as marcas carregam
+  useEffect(() => {
+    if (fipe.marcas.length > 0 && !fipe.mCod) {
+      const honda = fipe.marcas.find(m => m.nome.toUpperCase().includes('HONDA'));
+      if (honda) fipe.setMCod(honda.codigo);
+    }
+  }, [fipe.marcas]);
+
+  // Quando ano muda, tenta casar com o código FIPE para consulta de preço
+  useEffect(() => {
+    if (!ano || !fipe.anos.length) { fipe.setACod(''); return; }
+    const match = fipe.anos.find(a => a.nome.startsWith(String(ano)));
+    fipe.setACod(match ? match.codigo : '');
+  }, [ano, fipe.anos]);
 
   const setFoto = (idx,val) => setFotos(p=>{ const n=[...p]; n[idx]=val; return n; });
   const setLaudoItem = (k,v) => setLaudo(p=>({...p,[k]:v}));
@@ -978,8 +1065,8 @@ const Cadastro = ({ user, onSave }) => {
     const fotosFaltando = fotos.map((f,i)=>!f?FOTO_LABELS[i]:null).filter(Boolean);
     if (fotosFaltando.length>0) e.fotos=`Fotos obrigatórias faltando: ${fotosFaltando.join(', ')}.`;
 
+    if (!ano) e.ano='Selecione o ano do veículo.';
     if (!pd || pdNum<=0) e.pd='Informe o valor desejado.';
-    // Melhoria 6: FIPE
     if (fipeExcede) e.pd=`Valor acima da tabela FIPE (${R(fipe.fipeRes.valor)}). Reduza o preço desejado.`;
 
     setErros(e);
@@ -989,13 +1076,11 @@ const Cadastro = ({ user, onSave }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!validar()) { window.scrollTo({top:0,behavior:'smooth'}); return; }
-    const marcaLabel  = fipe.marcas.find(m=>m.codigo===fipe.mCod)?.nome || '';
-    const modeloLabel = fipe.modelos.find(m=>m.codigo===fipe.mdCod)?.nome || '';
-    const anoLabel    = fipe.anos.find(a=>a.codigo===fipe.aCod)?.nome || '';
+    const modeloLabel = fipe.modelos.find(m=>m.codigo===fipe.mdCod)?.nome || '—';
     onSave({
       id: Date.now(),
       prop:{ nome:pNome, cpf:pCpf, fone:pFone },
-      vei:{ marca:marcaLabel||'—', modelo:modeloLabel||'—', ano:parseInt(anoLabel)||new Date().getFullYear(), placa, renavam, km:parseInt(km) },
+      vei:{ marca:'Honda', modelo:modeloLabel, ano:parseInt(ano)||new Date().getFullYear(), placa, renavam, km:parseInt(km) },
       obs, laudo, fotos, pd:pdNum, ...calc(pdNum),
       status:'disponivel', capId:user.id, cap:user.nome,
       vendId:null, vend:null, comprador:null, conc:user.conc, data:new Date().toISOString().split('T')[0],
@@ -1031,7 +1116,8 @@ const Cadastro = ({ user, onSave }) => {
               {pCpf.length===14 && validarCPF(pCpf) && <p className="text-emerald-600 text-xs mt-1">✓ CPF válido</p>}
             </div>
             <div>
-              <input className={inp(erros.pFone)} placeholder="WhatsApp *" value={pFone} onChange={e=>setPFone(e.target.value)} />
+              <input className={inp(erros.pFone)} placeholder="(00) 00000-0000" inputMode="numeric"
+                value={pFone} onChange={e=>setPFone(fmtTel(e.target.value))} />
               {erros.pFone && <p className="text-red-500 text-xs mt-1">{erros.pFone}</p>}
             </div>
           </div>
@@ -1041,28 +1127,31 @@ const Cadastro = ({ user, onSave }) => {
         <Card title="Dados do Veículo"
           badge={fipe.fipeErr ? <span className="text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">FIPE offline</span> : fipe.loading ? <span className="text-xs text-blue-500">Carregando FIPE…</span> : null}>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-            {/* MELHORIA 6 — Selects FIPE */}
+            {/* Marca: apenas Honda */}
             <div>
               <label className="text-xs text-gray-500 font-medium">Marca *</label>
-              <select className={sel} value={fipe.mCod} onChange={e=>fipe.setMCod(e.target.value)} disabled={fipe.fipeErr||fipe.marcas.length===0}>
-                <option value="">Selecione…</option>
-                {fipe.marcas.map(m=><option key={m.codigo} value={m.codigo}>{m.nome}</option>)}
-              </select>
-              {!fipe.mCod && erros.marca && <p className="text-red-500 text-xs mt-1">{erros.marca}</p>}
+              <div className={`${sel} flex items-center gap-2 bg-slate-50 text-gray-700 font-semibold cursor-not-allowed`}>
+                <span>🏍️</span> Honda
+              </div>
             </div>
+            {/* Modelo via FIPE (Honda) */}
             <div>
               <label className="text-xs text-gray-500 font-medium">Modelo *</label>
-              <select className={sel} value={fipe.mdCod} onChange={e=>fipe.setMdCod(e.target.value)} disabled={!fipe.mCod}>
-                <option value="">Selecione…</option>
+              <select className={sel} value={fipe.mdCod} onChange={e=>fipe.setMdCod(e.target.value)}
+                disabled={!fipe.mCod || fipe.modelos.length===0}>
+                <option value="">{fipe.mCod?'Selecione…':'Aguardando FIPE…'}</option>
                 {fipe.modelos.map(m=><option key={m.codigo} value={m.codigo}>{m.nome}</option>)}
               </select>
             </div>
+            {/* Ano: select estático 2026→2000 */}
             <div>
               <label className="text-xs text-gray-500 font-medium">Ano *</label>
-              <select className={sel} value={fipe.aCod} onChange={e=>fipe.setACod(e.target.value)} disabled={!fipe.mdCod}>
+              <select className={`${sel} ${erros.ano?'border-red-400':''}`}
+                value={ano} onChange={e=>setAno(e.target.value)}>
                 <option value="">Selecione…</option>
-                {fipe.anos.map(a=><option key={a.codigo} value={a.codigo}>{a.nome}</option>)}
+                {ANOS.map(a=><option key={a} value={a}>{a}</option>)}
               </select>
+              {erros.ano && <p className="text-red-500 text-xs mt-1">{erros.ano}</p>}
             </div>
           </div>
 
@@ -1571,7 +1660,7 @@ const PerfilPage = ({ user, onUpdate, onLogout }) => {
         {/* Telefone */}
         <div><p className={roLabel}>Telefone / WhatsApp</p>
           {editing
-            ? <input className={inp+" mt-1"} value={tel} onChange={e=>setTel(e.target.value)} placeholder="(88) 99999-0000" />
+            ? <input className={inp+" mt-1"} value={tel} onChange={e=>setTel(fmtTel(e.target.value))} placeholder="(00) 00000-0000" inputMode="numeric" />
             : <p className={roVal}>{tel||'—'}</p>}
         </div>
         {/* Data de nascimento */}
