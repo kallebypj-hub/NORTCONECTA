@@ -157,10 +157,14 @@ const LS = {
 };
 
 // ── Pricing ─────────────────────────────────────────────────
-const calc = (pd) => {
-  const p = parseFloat(pd)||0;
-  const bonus=200, onze=p*0.11, final=p+bonus+onze, comVenda=final*0.01, lucroApp=onze-comVenda;
-  return { precoFinal:final, bonus, onzePct:onze, comissaoVenda:comVenda, lucroApp };
+const calc = (pd, fipeValor = 0) => {
+  const p = parseFloat(pd) || 0;
+  const bonus = 200;
+  const precoFinal = fipeValor > 0 ? fipeValor - 500 : p * 1.11 + 200;
+  const comVenda = precoFinal * 0.01;
+  const lucroApp = precoFinal - p - bonus - comVenda;
+  const onzePct = p * 0.11;
+  return { precoFinal, bonus, onzePct, comVenda, comissaoVenda: comVenda, lucroApp };
 };
 const R = (v) => (v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 
@@ -803,23 +807,23 @@ const useFIPE = () => {
 };
 
 // ── Breakdown de precificação ──────────────────────────────────
-const Breakdown = ({ pd }) => {
-  const { precoFinal, bonus, onzePct, comissaoVenda, lucroApp } = calc(pd);
+const Breakdown = ({ pd, precoFinal }) => {
+  const bonus    = 200;
+  const comVenda = precoFinal * 0.01;
+  const lucroApp = precoFinal - pd - bonus - comVenda;
   return (
     <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm">
-      <p className="font-bold text-[#0a0a0a] mb-3">Cálculo do Preço</p>
+      <p className="font-bold text-[#0a0a0a] mb-3">Distribuição do Preço (Admin)</p>
       <div className="space-y-1.5">
-        <RowD l="Preço desejado pelo dono" v={R(pd)} />
-        <RowD l="+ Bônus de captação (fixo)" v={R(bonus)} vc="text-orange-500" />
-        <RowD l="+ 11% sobre preço desejado" v={R(onzePct)} />
-        <div className="border-t border-blue-200 pt-2 mt-1 flex justify-between font-bold text-[#0a0a0a]">
-          <span>= Preço ao comprador</span><span className="text-lg">{R(precoFinal)}</span>
+        <RowD l="Preço ao comprador (FIPE − R$500)" v={R(precoFinal)} />
+        <div className="border-t border-blue-200 pt-2 mt-1 space-y-1.5">
+          <RowD l="− Preço desejado pelo proprietário" v={R(pd)} />
+          <RowD l="− Bônus captação (fixo)" v={R(bonus)} vc="text-orange-500" />
+          <RowD l="− Comissão venda (1% do preço final)" v={R(comVenda)} vc="text-emerald-600" />
         </div>
-      </div>
-      <div className="mt-3 pt-3 border-t border-blue-200">
-        <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Distribuição dos 11%</p>
-        <RowD l="Comissão Vendedor B (1% do preço final)" v={R(comissaoVenda)} vc="text-emerald-600" />
-        <RowD l="Lucro App + Concessionária" v={R(lucroApp)} vc="text-[#0a0a0a]" />
+        <div className="border-t border-blue-200 pt-2 mt-1 flex justify-between font-bold text-[#0a0a0a]">
+          <span>= Lucro do App</span><span className="text-lg text-[#ff4500]">{R(lucroApp)}</span>
+        </div>
       </div>
     </div>
   );
@@ -979,7 +983,7 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
             )}
           </div>
 
-          {!shouldHideSensitive && <Breakdown pd={m.pd} />}
+          {!shouldHideSensitive && user.perfil === 'super_admin' && <Breakdown pd={m.pd} precoFinal={m.precoFinal} />}
 
           {!shouldHideSensitive && (
             <div className="mt-4 pt-4 border-t border-slate-100 text-sm space-y-1.5">
@@ -1225,6 +1229,7 @@ const Cadastro = ({ user, onSave }) => {
   const pdMax      = fipeVal > 700 ? Math.floor(((fipeVal - 700) / 1.11) * 100) / 100 : 0;
   const limitePrecoFinal = fipeVal - 500;                     // teto do preço ao comprador
   const precoFinalAtual  = pdNum > 0 ? pdNum * 1.11 + 200 : 0;
+  const precoFinalCalc   = pdNum > 0 ? calc(pdNum, fipe.fipeRes?.valor || 0).precoFinal : 0;
   const fipeExcede = fipe.fipeRes && pdNum > 0 && precoFinalAtual >= limitePrecoFinal;
 
   const inp = (err) => `w-full border ${err?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]`;
@@ -1273,7 +1278,7 @@ const Cadastro = ({ user, onSave }) => {
       id: Date.now(),
       prop:{ nome:pNome, cpf:pCpf, fone:pFone },
       vei:{ marca:'Honda', modelo:modeloLabel, ano:parseInt(ano)||new Date().getFullYear(), placa, renavam, km:parseInt(km) },
-      obs, laudo, fotos, pd:pdNum, ...calc(pdNum),
+      obs, laudo, fotos, pd:pdNum, ...calc(pdNum, fipe.fipeRes?.valor || 0),
       numCRV, nomeDocumento, aptoTransferencia:true, laudoAssinado:true,
       debitosValor:parseFloat(debitosValor)||0, debitosObs,
       status:'disponivel', capId:user.id, cap:user.nome,
@@ -1455,7 +1460,7 @@ const Cadastro = ({ user, onSave }) => {
 
           {erros.pd && !fipeExcede && <p className="text-red-500 text-xs mt-1">{erros.pd}</p>}
 
-          {pdNum > 0 && !fipeExcede && user.perfil !== 'vendedor' && <div className="mt-4"><Breakdown pd={pdNum} /></div>}
+          {pdNum > 0 && !fipeExcede && user.perfil === 'super_admin' && <div className="mt-4"><Breakdown pd={pdNum} precoFinal={precoFinalCalc} /></div>}
         </Card>
 
         {/* Documentação para Transferência */}
