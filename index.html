@@ -988,6 +988,27 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
             {!isCompradorView && m.comprador && <RowD l="Comprador" v={m.comprador.nome} />}
           </div>
 
+          {/* Débitos + Documentação — apenas super_admin */}
+          {user.perfil === 'super_admin' && (
+            <div className="mt-4 space-y-3">
+              {m.debitosValor > 0 ? (
+                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm">
+                  <p className="font-bold text-red-700 mb-1">⚠️ Débitos registrados: {R(m.debitosValor)}</p>
+                  {m.debitosObs && <p className="text-red-600 text-xs leading-snug">{m.debitosObs}</p>}
+                </div>
+              ) : (
+                <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-2.5 text-sm">
+                  <p className="text-emerald-700 font-medium">✓ Sem débitos registrados</p>
+                </div>
+              )}
+              <div className="bg-slate-50 border border-slate-100 rounded-xl px-4 py-3 text-sm space-y-1.5">
+                <p className="font-semibold text-gray-700 text-xs uppercase tracking-wide mb-2">Documentação</p>
+                {m.numCRV && <RowD l="Nº CRV/CRLV" v={m.numCRV} />}
+                {m.nomeDocumento && <RowD l="Nome no documento" v={m.nomeDocumento} />}
+              </div>
+            </div>
+          )}
+
           <div className="mt-5 flex flex-wrap gap-2">
             {podeAvancar && <button onClick={()=>setInt(true)} className="bg-[#ff4500] text-white px-4 py-2 rounded-xl text-sm font-semibold hover:bg-[#e03d00]">🤝 Tenho um comprador</button>}
             {podeConcluir && <>
@@ -1119,6 +1140,18 @@ const Cadastro = ({ user, onSave }) => {
   // Preço
   const [pd,setPd] = useState('');
 
+  // Documentação para transferência
+  const [numCRV,        setNumCRV]        = useState('');
+  const [nomeDocumento, setNomeDocumento]  = useState('');
+  const [aptoTransferencia, setApto]       = useState(false);
+
+  // Assinatura do laudo
+  const [laudoAssinado, setLaudoAssinado] = useState(false);
+
+  // Débitos (super_admin)
+  const [debitosValor, setDebitosValor] = useState('');
+  const [debitosObs,   setDebitosObs]   = useState('');
+
   // Erros gerais
   const [erros,setErros] = useState({});
 
@@ -1200,6 +1233,14 @@ const Cadastro = ({ user, onSave }) => {
     if (!pd || pdNum<=0) e.pd='Informe o valor desejado.';
     if (fipeExcede) e.pd=`O preço final ficaria acima do limite permitido. O valor máximo que você pode receber é ${R(pdMax)} para manter o veículo competitivo no mercado.`;
 
+    // Documentação
+    if (!numCRV.trim()) e.numCRV='Número do CRV/CRLV obrigatório.';
+    if (!nomeDocumento.trim()) e.nomeDocumento='Nome no documento obrigatório.';
+    if (!aptoTransferencia) e.aptoTransferencia='Confirme que o veículo está apto para transferência.';
+
+    // Assinatura do laudo
+    if (!laudoAssinado) e.laudoAssinado='Assinatura do laudo obrigatória.';
+
     setErros(e);
     return Object.keys(e).length===0;
   };
@@ -1213,6 +1254,8 @@ const Cadastro = ({ user, onSave }) => {
       prop:{ nome:pNome, cpf:pCpf, fone:pFone },
       vei:{ marca:'Honda', modelo:modeloLabel, ano:parseInt(ano)||new Date().getFullYear(), placa, renavam, km:parseInt(km) },
       obs, laudo, fotos, pd:pdNum, ...calc(pdNum),
+      numCRV, nomeDocumento, aptoTransferencia:true, laudoAssinado:true,
+      debitosValor:parseFloat(debitosValor)||0, debitosObs,
       status:'disponivel', capId:user.id, cap:user.nome,
       vendId:null, vend:null, comprador:null, conc:user.conc, data:new Date().toISOString().split('T')[0],
     });
@@ -1333,6 +1376,11 @@ const Cadastro = ({ user, onSave }) => {
           <LaudoForm laudo={laudo} onChange={setLaudoItem} />
           {erros.laudo && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-xl px-3 py-2">{erros.laudo}</p>}
           {erros.laudoAtencao && <p className="text-amber-700 text-sm mt-2 bg-amber-50 rounded-xl px-3 py-2">⚠️ {erros.laudoAtencao}</p>}
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <p className="text-xs text-gray-500 font-medium mb-2">Assine confirmando a veracidade do laudo acima</p>
+            <SigPad onSign={setLaudoAssinado} />
+            {erros.laudoAssinado && <p className="text-red-500 text-xs mt-1">{erros.laudoAssinado}</p>}
+          </div>
           <div className="mt-3">
             <label className="text-xs text-gray-500 font-medium">Observações adicionais</label>
             <textarea className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm h-20 resize-none focus:outline-none focus:border-[#ff4500]" placeholder="Descreva o estado geral..." value={obs} onChange={e=>setObs(e.target.value)} />
@@ -1389,6 +1437,49 @@ const Cadastro = ({ user, onSave }) => {
 
           {pdNum > 0 && !fipeExcede && user.perfil !== 'vendedor' && <div className="mt-4"><Breakdown pd={pdNum} /></div>}
         </Card>
+
+        {/* Documentação para Transferência */}
+        <Card title="Documentação para Transferência">
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Número do CRV/CRLV *</label>
+              <input className={inp(erros.numCRV)} placeholder="Ex: 000000000" value={numCRV} onChange={e=>setNumCRV(e.target.value)} />
+              {erros.numCRV && <p className="text-red-500 text-xs mt-1">{erros.numCRV}</p>}
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 font-medium">Nome no documento (igual ao CRV) *</label>
+              <input className={inp(erros.nomeDocumento)} placeholder="Nome completo como consta no documento" value={nomeDocumento} onChange={e=>setNomeDocumento(e.target.value)} />
+              {erros.nomeDocumento && <p className="text-red-500 text-xs mt-1">{erros.nomeDocumento}</p>}
+            </div>
+            <label className={`flex items-start gap-3 cursor-pointer p-3 rounded-xl border ${erros.aptoTransferencia?'border-red-300 bg-red-50':'border-gray-200 hover:border-[#ff4500]'} transition-colors`}>
+              <input type="checkbox" checked={aptoTransferencia} onChange={e=>setApto(e.target.checked)}
+                className="mt-0.5 w-4 h-4 accent-[#ff4500] flex-shrink-0" />
+              <span className="text-sm text-gray-700 leading-snug">
+                Declaro que o veículo está apto para transferência, sem restrições graves (roubo, alienação fiduciária ou bloqueio judicial)
+              </span>
+            </label>
+            {erros.aptoTransferencia && <p className="text-red-500 text-xs">{erros.aptoTransferencia}</p>}
+          </div>
+        </Card>
+
+        {/* Débitos do Veículo — apenas super_admin */}
+        {user.perfil === 'super_admin' && (
+          <Card title="Débitos do Veículo" badge={<span className="text-xs text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">Admin</span>}>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Valor total de débitos (R$)</label>
+                <input className={inp(false)} type="number" step="0.01" placeholder="0,00"
+                  value={debitosValor} onChange={e=>setDebitosValor(e.target.value)} />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">Observações dos débitos</label>
+                <textarea className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2.5 text-sm h-20 resize-none focus:outline-none focus:border-[#ff4500]"
+                  placeholder="Descreva multas, IPVA, licenciamento..."
+                  value={debitosObs} onChange={e=>setDebitosObs(e.target.value)} />
+              </div>
+            </div>
+          </Card>
+        )}
 
         <button type="submit"
           className="w-full bg-[#ff4500] text-white py-4 rounded-2xl font-bold text-base hover:bg-[#e03d00] transition-colors shadow-lg">
