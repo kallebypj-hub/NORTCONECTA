@@ -918,8 +918,9 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
   const podeConcluir = (user.perfil==='vendedor'||user.perfil==='gerente') && m.status==='em_negociacao';
 
   // Visibilidade por perfil
-  const isCompradorView  = user.perfil === 'comprador' || modoComprador;
-  const isOtherVendor    = user.perfil === 'vendedor' && m.capId !== user.id && !isCompradorView;
+  const isCompradorView      = user.perfil === 'comprador' || modoComprador === true;
+  const isOtherVendor        = user.perfil === 'vendedor' && m.capId !== user.id && !modoComprador;
+  const shouldHideSensitive  = isCompradorView || isOtherVendor;
 
   const handleSign = (tipo) => { if (tipo==='honorarios') { onConcluir(m.id); onClose(); } };
 
@@ -978,15 +979,17 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
             )}
           </div>
 
-          {!isCompradorView && !isOtherVendor && <Breakdown pd={m.pd} />}
+          {!shouldHideSensitive && <Breakdown pd={m.pd} />}
 
-          <div className="mt-4 pt-4 border-t border-slate-100 text-sm space-y-1.5">
-            {!isCompradorView && <RowD l="Proprietário" v={m.prop.nome} />}
-            {!isCompradorView && !isOtherVendor && <RowD l="Contato" v={m.prop.fone} />}
-            {!isCompradorView && <RowD l="Vendedor Captação (A)" v={m.cap} />}
-            {!isCompradorView && m.vend && <RowD l="Vendedor Venda (B)" v={m.vend} />}
-            {!isCompradorView && m.comprador && <RowD l="Comprador" v={m.comprador.nome} />}
-          </div>
+          {!shouldHideSensitive && (
+            <div className="mt-4 pt-4 border-t border-slate-100 text-sm space-y-1.5">
+              <RowD l="Proprietário" v={m.prop.nome} />
+              <RowD l="Contato" v={m.prop.fone} />
+              <RowD l="Vendedor Captação (A)" v={m.cap} />
+              {m.vend && <RowD l="Vendedor Venda (B)" v={m.vend} />}
+              {m.comprador && <RowD l="Comprador" v={m.comprador.nome} />}
+            </div>
+          )}
 
           {/* Débitos + Documentação — apenas super_admin */}
           {user.perfil === 'super_admin' && (
