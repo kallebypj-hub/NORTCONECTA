@@ -35,6 +35,10 @@
     .frenzzo-delay-1{animation-delay:.15s;opacity:0;}
     .frenzzo-delay-2{animation-delay:.3s;opacity:0;}
     .frenzzo-delay-3{animation-delay:.45s;opacity:0;}
+    /* Tema escuro — aplicado via ConfigPage no body */
+    body.frenzzo-dark{filter:invert(1) hue-rotate(180deg);}
+    body.frenzzo-dark img,body.frenzzo-dark video,body.frenzzo-dark svg{filter:invert(1) hue-rotate(180deg);}
+    body.frenzzo-dark canvas{filter:invert(1) hue-rotate(180deg);}
   </style>
 </head>
 <body class="bg-slate-50">
@@ -174,7 +178,7 @@ const MOTOS0 = [
     status:'concluido', capId:4,cap:'Rafael Souza',vendId:3,vend:'Lucas Mendes',
     comprador:{nome:'Ana Costa',cpf:'529.982.247-25',fone:'(88) 99555-6666'},conc:'NortMotos',data:'2024-01-05' },
 ];
-const CONCS0 = [{ id:1, nome:'NortMotos', cidade:'Sobral', uf:'CE', ativa:true }];
+const CONCS0 = [{ id:1, nome:'NortMotos', cidade:'Sobral', uf:'CE', ativa:true, codigo:'1614410' }];
 
 const ST_LABEL = { disponivel:'Disponível', em_negociacao:'Em Negociação', aguardando_assinatura:'Aguard. Assinatura', concluido:'Concluído' };
 const ST_CLS   = { disponivel:'bg-emerald-100 text-emerald-800', em_negociacao:'bg-amber-100 text-amber-800', aguardando_assinatura:'bg-blue-100 text-blue-800', concluido:'bg-slate-100 text-slate-600' };
@@ -378,8 +382,11 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
     if (!f.email.includes('@')) e.email = 'E-mail inválido.';
     if (!viaGoogle && f.senha.length < 6) e.senha = 'Senha deve ter ao menos 6 caracteres.';
     if (!f.tel.trim()) e.tel = 'Informe seu telefone.';
-    // ── Melhoria 2: código real 1614410, mensagem correta
-    if (!CONC_CODES[f.codConc.trim()]) e.codConc = 'Código de concessionária inválido. Entre em contato com o administrador.';
+    // Feature 5: valida contra CONC_CODES estático E concs dinâmicas do localStorage
+    const concsLS = LS.getConcs() || [];
+    const codigoValido = CONC_CODES[f.codConc.trim()] ||
+      concsLS.some(c => c.codigo === f.codConc.trim() && c.ativa);
+    if (!codigoValido) e.codConc = 'Código inválido. Entre em contato com o administrador.';
     setErros(e);
     return Object.keys(e).length === 0;
   };
@@ -399,7 +406,9 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
       email: f.email.toLowerCase(), senha: f.senha, tel: f.tel, codConc: code,
       perfil: concInfo.perfil, conc: concInfo.nome || null,
       googleId: googleData?.googleId || null,
-      marketing, // ── Melhoria 3: salva preferência de e-mail marketing
+      marketing,
+      dataCadastro: new Date().toISOString().split('T')[0],
+      mustChangePassword: false,
     };
     LS.saveUsers([...users, novoUser]);
     setOk('Conta criada! Redirecionando...');
@@ -1287,34 +1296,436 @@ const Relatorio = ({ motos, user }) => {
 };
 
 // ── CONCESSIONÁRIAS ────────────────────────────────────────────
-const Concessionarias = ({ concs, motos, onToggle }) => (
-  <div>
-    <div className="mb-6 flex justify-between items-center">
-      <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Concessionárias Parceiras</h1><p className="text-gray-400 text-sm">{concs.length} parceira(s)</p></div>
-      <button className="bg-[#ff4500] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#e03d00]">+ Nova Parceira</button>
+const Concessionarias = ({ concs, motos, users=[], onToggle, onUpdateConcs }) => {
+  const [resetToast, setResetToast] = useState('');
+
+  const handleResetSenha = (membro) => {
+    const tempSenha = 'Frenzzo@' + Math.random().toString(36).slice(2,6).toUpperCase();
+    const updated = { ...membro, senha: tempSenha, mustChangePassword: true };
+    LS.saveUsers((LS.getUsers()||[]).map(u => u.id === membro.id ? updated : u));
+    setResetToast(`Senha de ${membro.nome} redefinida para: ${tempSenha}`);
+    setTimeout(() => setResetToast(''), 6000);
+  };
+
+  const PERFIL_BADGE = {
+    vendedor: 'bg-blue-100 text-blue-700',
+    gerente:  'bg-purple-100 text-purple-700',
+  };
+
+  return (
+    <div>
+      <div className="mb-6 flex justify-between items-center">
+        <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Concessionárias Parceiras</h1>
+          <p className="text-gray-400 text-sm">{concs.length} parceira(s)</p></div>
+        <button className="bg-[#ff4500] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#e03d00]">+ Nova Parceira</button>
+      </div>
+
+      {resetToast && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3 text-sm text-amber-800 font-medium">
+          🔑 {resetToast}
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {concs.map(c => {
+          const mc = motos.filter(m => m.conc === c.nome);
+          const cc = mc.filter(m => m.status === 'concluido');
+          const appTotal = cc.reduce((s,m) => s+m.lucroApp, 0);
+          const membros = users.filter(u => u.conc === c.nome && u.perfil !== 'super_admin');
+
+          return (
+            <div key={c.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+              {/* Cabeçalho */}
+              <div className="p-6 pb-4">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="font-bold text-gray-800 text-xl">{c.nome}</h3>
+                    <p className="text-gray-400 text-sm">{c.cidade} — {c.uf}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${c.ativa?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>
+                    {c.ativa?'Ativa':'Inativa'}
+                  </span>
+                </div>
+
+                {/* Código (feature 5 — Admin consulta aqui) */}
+                <div className="bg-slate-50 rounded-xl px-4 py-2 mb-4 flex items-center justify-between">
+                  <span className="text-xs text-gray-400 font-medium">Código de acesso</span>
+                  <span className="font-mono font-bold text-[#ff4500] tracking-widest">{c.codigo || '—'}</span>
+                </div>
+
+                {/* Métricas */}
+                <div className="grid grid-cols-3 gap-3 text-sm mb-4">
+                  {[['Total Motos',mc.length],['Concluídos',cc.length],['A Pagar',R(appTotal)]].map(([l,v])=>(
+                    <div key={l} className="bg-slate-50 rounded-xl p-3 text-center">
+                      <p className="text-gray-400 text-xs">{l}</p>
+                      <p className="font-bold text-[#0a0a0a]">{v}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <button onClick={()=>onToggle(c.id)}
+                  className="w-full border border-gray-200 text-gray-600 py-2 rounded-xl text-sm hover:bg-slate-50">
+                  {c.ativa?'Desativar':'Ativar'}
+                </button>
+              </div>
+
+              {/* Lista de membros — Feature 6 */}
+              {membros.length > 0 && (
+                <div className="border-t border-slate-100 px-6 py-4">
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
+                    Equipe ({membros.length})
+                  </p>
+                  <div className="space-y-2">
+                    {membros.map(m => (
+                      <div key={m.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-[#ff4500] flex items-center justify-center text-white text-xs font-bold overflow-hidden">
+                            {m.foto ? <img src={m.foto} className="w-full h-full object-cover" alt="" /> : m.nome[0]}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{m.nome}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${PERFIL_BADGE[m.perfil]||'bg-gray-100 text-gray-600'}`}>
+                                {PERFIL[m.perfil]}
+                              </span>
+                              {m.mustChangePassword && (
+                                <span className="text-xs text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">troca pendente</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <button onClick={() => handleResetSenha(m)}
+                          className="text-xs text-gray-500 border border-gray-200 px-2.5 py-1.5 rounded-lg hover:border-[#ff4500] hover:text-[#ff4500] transition-colors font-medium">
+                          🔑 Redefinir senha
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-      {concs.map(c=>{
-        const mc=motos.filter(m=>m.conc===c.nome), cc=mc.filter(m=>m.status==='concluido');
-        const appTotal=cc.reduce((s,m)=>s+m.lucroApp,0);
-        return (
-          <div key={c.id} className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100">
-            <div className="flex justify-between items-start mb-4">
-              <div><h3 className="font-bold text-gray-800 text-xl">{c.nome}</h3><p className="text-gray-400 text-sm">{c.cidade} — {c.uf}</p></div>
-              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${c.ativa?'bg-emerald-100 text-emerald-700':'bg-red-100 text-red-700'}`}>{c.ativa?'Ativa':'Inativa'}</span>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE 2 — Modal Alterar Senha
+// ══════════════════════════════════════════════════════════════
+const AlterarSenhaModal = ({ user, onClose, onSaved }) => {
+  const [atual,setAtual]   = useState('');
+  const [nova,setNova]     = useState('');
+  const [conf,setConf]     = useState('');
+  const [err,setErr]       = useState('');
+  const inp = (e) => `w-full border ${e?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]`;
+  const handle = () => {
+    if (atual !== user.senha) { setErr('Senha atual incorreta.'); return; }
+    if (nova.length < 6)       { setErr('Nova senha deve ter ao menos 6 caracteres.'); return; }
+    if (nova !== conf)          { setErr('As senhas não coincidem.'); return; }
+    const updated = { ...user, senha: nova, mustChangePassword: false };
+    LS.saveUsers((LS.getUsers()||[]).map(u => u.id===user.id ? updated : u));
+    LS.saveSession(updated);
+    onSaved(updated);
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <h3 className="font-bold text-[#0a0a0a] text-lg mb-5">Alterar Senha</h3>
+        <div className="space-y-3">
+          <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha atual</label>
+            <input className={inp(false)} type="password" placeholder="••••••••" value={atual} onChange={e=>setAtual(e.target.value)} /></div>
+          <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nova senha</label>
+            <input className={inp(false)} type="password" placeholder="••••••••" value={nova} onChange={e=>setNova(e.target.value)} /></div>
+          <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirmar nova senha</label>
+            <input className={inp(false)} type="password" placeholder="••••••••" value={conf} onChange={e=>setConf(e.target.value)} /></div>
+        </div>
+        {err && <p className="text-red-500 text-sm mt-3 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+        <div className="flex gap-3 mt-5">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+          <button onClick={handle} className="flex-1 bg-[#ff4500] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#e03d00]">Salvar</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE 3 — Modal Excluir Conta
+// ══════════════════════════════════════════════════════════════
+const ExcluirContaModal = ({ user, onClose, onDeleted }) => {
+  const [txt,setTxt] = useState('');
+  const handle = () => {
+    if (txt !== 'CONFIRMAR') return;
+    LS.saveUsers((LS.getUsers()||[]).filter(u => u.id !== user.id));
+    LS.clearSession();
+    onDeleted();
+  };
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={e=>e.stopPropagation()}>
+        <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <span className="text-red-600 text-2xl">⚠️</span>
+        </div>
+        <h3 className="font-bold text-[#0a0a0a] text-lg text-center mb-2">Excluir minha conta</h3>
+        <p className="text-sm text-gray-500 text-center mb-5">Esta ação é irreversível. Digite <strong className="text-red-600">CONFIRMAR</strong> para prosseguir.</p>
+        <input className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-center font-bold tracking-widest focus:outline-none focus:border-red-400 uppercase"
+          placeholder="CONFIRMAR" value={txt} onChange={e=>setTxt(e.target.value.toUpperCase())} />
+        <div className="flex gap-3 mt-4">
+          <button onClick={onClose} className="flex-1 border border-gray-200 text-gray-600 py-2.5 rounded-xl text-sm">Cancelar</button>
+          <button onClick={handle} disabled={txt!=='CONFIRMAR'}
+            className="flex-1 bg-red-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-red-700 disabled:opacity-40">
+            Excluir conta
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE 1 — Tela de Perfil completa
+// ══════════════════════════════════════════════════════════════
+const PerfilPage = ({ user, onUpdate, onLogout }) => {
+  const [foto,setFoto]       = useState(user.foto||null);
+  const [nome,setNome]       = useState(user.nome);
+  const [tel,setTel]         = useState(user.tel||'');
+  const [dataNasc,setNasc]   = useState(user.dataNasc||'');
+  const [editing,setEditing] = useState(false);
+  const [saved,setSaved]     = useState(false);
+  const [showSenha,setShowS] = useState(false);
+  const [showExc,setShowExc] = useState(false);
+  const fotoRef = useRef();
+
+  const handleFoto = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX=200; const r=Math.min(MAX/img.width,MAX/img.height,1);
+        const c=document.createElement('canvas'); c.width=Math.round(img.width*r); c.height=Math.round(img.height*r);
+        c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+        setFoto(c.toDataURL('image/jpeg',0.8));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveProfile = () => {
+    const updated = { ...user, nome:nome.trim(), tel, dataNasc, foto };
+    LS.saveUsers((LS.getUsers()||[]).map(u => u.id===user.id ? updated : u));
+    LS.saveSession(updated);
+    onUpdate(updated);
+    setEditing(false);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2500);
+  };
+
+  const inp = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]";
+  const roLabel = "text-xs font-semibold text-gray-400 uppercase tracking-wide";
+  const roVal   = "text-sm text-gray-700 mt-0.5 font-medium";
+
+  return (
+    <div className="max-w-lg mx-auto">
+      <div className="mb-6 flex items-center justify-between">
+        <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Meu Perfil</h1><p className="text-gray-400 text-sm">Gerencie seus dados pessoais</p></div>
+        {saved && <span className="text-emerald-600 text-sm font-semibold frenzzo-fade-in">✓ Salvo!</span>}
+      </div>
+
+      {/* Foto + nome */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 mb-4">
+        <div className="flex items-center gap-5">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-full overflow-hidden bg-[#ff4500] flex items-center justify-center">
+              {foto ? <img src={foto} className="w-full h-full object-cover" alt="Foto" />
+                     : <span className="text-white font-black text-3xl">{nome[0]}</span>}
             </div>
-            <div className="grid grid-cols-3 gap-3 text-sm mb-4">
-              {[['Total Motos',mc.length],['Concluídos',cc.length],['A Pagar',R(appTotal)]].map(([l,v])=>(
-                <div key={l} className="bg-slate-50 rounded-xl p-3 text-center"><p className="text-gray-400 text-xs">{l}</p><p className="font-bold text-[#0a0a0a]">{v}</p></div>
-              ))}
-            </div>
-            <button onClick={()=>onToggle(c.id)} className="w-full border border-gray-200 text-gray-600 py-2 rounded-xl text-sm hover:bg-slate-50">{c.ativa?'Desativar':'Ativar'}</button>
+            <button onClick={()=>fotoRef.current.click()}
+              className="absolute -bottom-1 -right-1 w-7 h-7 bg-[#ff4500] rounded-full flex items-center justify-center shadow text-white text-xs hover:bg-[#e03d00]">✏️</button>
+            <input ref={fotoRef} type="file" accept="image/*" className="hidden" onChange={handleFoto} />
           </div>
-        );
-      })}
+          <div className="flex-1">
+            {editing
+              ? <input className={inp} value={nome} onChange={e=>setNome(e.target.value)} placeholder="Nome completo" />
+              : <p className="text-xl font-bold text-[#0a0a0a]">{nome}</p>}
+            <p className="text-sm text-gray-400 mt-0.5">{PERFIL[user.perfil]}{user.conc&&` • ${user.conc}`}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Dados editáveis */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 mb-4 space-y-4">
+        <div className="flex justify-between items-center mb-1">
+          <p className="font-bold text-[#0a0a0a]">Dados Pessoais</p>
+          {!editing
+            ? <button onClick={()=>setEditing(true)} className="text-[#ff4500] text-sm font-semibold hover:underline">Editar</button>
+            : <div className="flex gap-2">
+                <button onClick={()=>setEditing(false)} className="text-gray-400 text-sm hover:text-gray-600">Cancelar</button>
+                <button onClick={saveProfile} className="bg-[#ff4500] text-white px-3 py-1 rounded-lg text-sm font-semibold">Salvar</button>
+              </div>}
+        </div>
+        {/* Telefone */}
+        <div><p className={roLabel}>Telefone / WhatsApp</p>
+          {editing
+            ? <input className={inp+" mt-1"} value={tel} onChange={e=>setTel(e.target.value)} placeholder="(88) 99999-0000" />
+            : <p className={roVal}>{tel||'—'}</p>}
+        </div>
+        {/* Data de nascimento */}
+        <div><p className={roLabel}>Data de Nascimento</p>
+          {editing
+            ? <input className={inp+" mt-1"} type="date" value={dataNasc} onChange={e=>setNasc(e.target.value)} />
+            : <p className={roVal}>{dataNasc ? new Date(dataNasc+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</p>}
+        </div>
+        {/* Somente leitura */}
+        <div><p className={roLabel}>E-mail</p><p className={roVal}>{user.email}</p></div>
+        <div><p className={roLabel}>Código da Concessionária</p><p className={roVal}>{user.codConc}</p></div>
+        <div><p className={roLabel}>Membro desde</p>
+          <p className={roVal}>{user.dataCadastro ? new Date(user.dataCadastro+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</p></div>
+      </div>
+
+      {/* Segurança */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 mb-4">
+        <p className="font-bold text-[#0a0a0a] mb-3">Segurança</p>
+        <button onClick={()=>setShowS(true)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-slate-50 rounded-xl text-sm hover:bg-slate-100 transition-colors">
+          <span className="font-medium text-gray-700">🔑 Alterar senha</span>
+          <span className="text-gray-400">›</span>
+        </button>
+      </div>
+
+      {/* Zona de perigo */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-red-100 mb-4">
+        <p className="font-bold text-red-600 mb-3">Zona de Perigo</p>
+        <button onClick={()=>setShowExc(true)}
+          className="w-full flex items-center justify-between px-4 py-3 bg-red-50 rounded-xl text-sm hover:bg-red-100 transition-colors">
+          <span className="font-medium text-red-600">🗑️ Excluir minha conta</span>
+          <span className="text-red-300">›</span>
+        </button>
+      </div>
+
+      {showSenha && <AlterarSenhaModal user={user} onClose={()=>setShowS(false)} onSaved={onUpdate} />}
+      {showExc   && <ExcluirContaModal user={user} onClose={()=>setShowExc(false)} onDeleted={onLogout} />}
     </div>
-  </div>
-);
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE 4 — Tela de Configurações
+// ══════════════════════════════════════════════════════════════
+const ConfigPage = ({ user, onUpdate }) => {
+  const [emailNotif, setEmail]  = useState(user.marketing ?? true);
+  const [darkMode,   setDark]   = useState(user.darkMode  ?? false);
+  const [idioma,     setIdioma] = useState(user.idioma    || 'pt-BR');
+  const [saved,      setSaved]  = useState(false);
+
+  // Aplica dark mode via classe no body
+  useEffect(() => {
+    document.body.classList.toggle('frenzzo-dark', darkMode);
+  }, [darkMode]);
+
+  const save = () => {
+    const updated = { ...user, marketing: emailNotif, darkMode, idioma };
+    LS.saveUsers((LS.getUsers()||[]).map(u => u.id===user.id ? updated : u));
+    LS.saveSession(updated);
+    onUpdate(updated);
+    setSaved(true);
+    setTimeout(()=>setSaved(false),2500);
+  };
+
+  const Toggle = ({ on, onToggle, label, desc }) => (
+    <div className="flex items-center justify-between py-4 border-b border-slate-50 last:border-0">
+      <div><p className="text-sm font-medium text-gray-800">{label}</p><p className="text-xs text-gray-400">{desc}</p></div>
+      <button onClick={onToggle}
+        className={`relative w-12 h-6 rounded-full transition-colors ${on?'bg-[#ff4500]':'bg-gray-200'}`}>
+        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${on?'translate-x-7':'translate-x-1'}`}/>
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="max-w-lg mx-auto">
+      <div className="mb-6 flex items-center justify-between">
+        <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Configurações</h1><p className="text-gray-400 text-sm">Personalize sua experiência</p></div>
+        {saved && <span className="text-emerald-600 text-sm font-semibold frenzzo-fade-in">✓ Salvo!</span>}
+      </div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 mb-4">
+        <p className="font-bold text-[#0a0a0a] mb-2">Notificações</p>
+        <Toggle on={emailNotif} onToggle={()=>setEmail(!emailNotif)}
+          label="E-mails de novidades" desc="Receba ofertas e atualizações da FRENZZO" />
+      </div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 mb-4">
+        <p className="font-bold text-[#0a0a0a] mb-2">Aparência</p>
+        <Toggle on={darkMode} onToggle={()=>setDark(!darkMode)}
+          label="Tema escuro" desc="Inverte as cores do app para ambientes escuros" />
+      </div>
+
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 mb-4">
+        <p className="font-bold text-[#0a0a0a] mb-3">Idioma</p>
+        <select className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]"
+          value={idioma} onChange={e=>setIdioma(e.target.value)}>
+          <option value="pt-BR">🇧🇷 Português (Brasil)</option>
+          <option value="en">🇺🇸 English (em breve)</option>
+          <option value="es">🇪🇸 Español (em breve)</option>
+        </select>
+      </div>
+
+      <button onClick={save} className="w-full bg-[#ff4500] text-white py-3.5 rounded-2xl font-bold hover:bg-[#e03d00] transition-colors">
+        Salvar Configurações
+      </button>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE 6 — Tela de troca de senha obrigatória
+// ══════════════════════════════════════════════════════════════
+const TrocaSenhaObrigatoria = ({ user, onDone }) => {
+  const [nova,setNova]   = useState('');
+  const [conf,setConf]   = useState('');
+  const [err,setErr]     = useState('');
+  const inp = "w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#ff4500]";
+  const handle = (e) => {
+    e.preventDefault();
+    if (nova.length < 6)  { setErr('Nova senha deve ter ao menos 6 caracteres.'); return; }
+    if (nova !== conf)     { setErr('As senhas não coincidem.'); return; }
+    const updated = { ...user, senha: nova, mustChangePassword: false };
+    LS.saveUsers((LS.getUsers()||[]).map(u => u.id===user.id ? updated : u));
+    LS.saveSession(updated);
+    onDone(updated);
+  };
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{background:'#0a0a0a'}}>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8"><FrenzzoLogo size="lg" /></div>
+        <div className="bg-white rounded-3xl shadow-2xl p-8">
+          <div className="text-center mb-6">
+            <div className="w-14 h-14 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <span className="text-2xl">🔑</span>
+            </div>
+            <h2 className="text-xl font-bold text-[#0a0a0a]">Troca de senha obrigatória</h2>
+            <p className="text-sm text-gray-400 mt-1">O administrador redefiniu sua senha. Crie uma nova para continuar.</p>
+          </div>
+          <form onSubmit={handle} className="space-y-4">
+            <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nova senha</label>
+              <input className={inp+" mt-1"} type="password" placeholder="••••••••" required value={nova} onChange={e=>setNova(e.target.value)} /></div>
+            <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirmar nova senha</label>
+              <input className={inp+" mt-1"} type="password" placeholder="••••••••" required value={conf} onChange={e=>setConf(e.target.value)} /></div>
+            {err && <p className="text-red-500 text-sm bg-red-50 rounded-xl px-3 py-2">{err}</p>}
+            <button type="submit" className="w-full bg-[#ff4500] text-white py-3.5 rounded-2xl font-bold hover:bg-[#e03d00] transition-colors mt-2">
+              Definir nova senha
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ══════════════════════════════════════════════════════════════
 // APP PRINCIPAL — gate de autenticação
@@ -1346,6 +1757,8 @@ const App = () => {
     setMotos(LS.getMotos() || MOTOS0);
     setConcs(LS.getConcs() || CONCS0);
     const sess = LS.getSession();
+    // Restaura tema escuro se o usuário tinha preferência salva
+    if (sess?.darkMode) document.body.classList.add('frenzzo-dark');
     // Splash mínimo de 2s para impacto da marca
     setTimeout(() => {
       if (sess) { setUser(sess); setAuth('app'); }
@@ -1359,10 +1772,11 @@ const App = () => {
 
   const [googleData, setGoogleData] = useState(null);
 
-  const notify = (msg) => { setToast(msg); setTimeout(()=>setToast(null),3000); };
+  const notify     = (msg) => { setToast(msg); setTimeout(()=>setToast(null),3000); };
   const handleLogin    = (u) => { setUser(u); setAuth('app'); };
   const handleLogout   = () => { LS.clearSession(); setUser(null); setAuth('login'); setPage('vitrine'); };
   const goRegisterGoogle = (data) => { setGoogleData(data); setAuth('register'); };
+  const handleUserUpdate = (updated) => { setUser(updated); };
   const onCadastrar    = (m) => { setMotos(p=>[...p,m]); setPage('vitrine'); notify('Moto cadastrada com sucesso!'); };
   const onAvancar      = (id,comp) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'em_negociacao',vendId:user.id,vend:user.nome,comprador:comp}:m)); notify('Interesse registrado!'); };
   const onConcluir     = (id) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'concluido'}:m)); notify('Negociação concluída! Comissões registradas.'); };
@@ -1380,6 +1794,8 @@ const App = () => {
   );
   if (authState==='login')    return <LoginPage onLogin={handleLogin} onGoRegister={()=>{setGoogleData(null);setAuth('register');}} onGoRegisterGoogle={goRegisterGoogle} />;
   if (authState==='register') return <RegisterPage onBack={()=>{setGoogleData(null);setAuth('login');}} onRegistered={handleLogin} googleData={googleData} />;
+  // Feature 6: força troca de senha se admin resetou
+  if (user?.mustChangePassword) return <TrocaSenhaObrigatoria user={user} onDone={handleUserUpdate} />;
 
   const NAV = [
     {k:'vitrine',        l:'Vitrine',      i:'🏍️', roles:['super_admin','gerente','vendedor']},
@@ -1407,18 +1823,32 @@ const App = () => {
           </nav>
           <div className="relative">
             <button onClick={()=>setMenu(!menu)} className="flex items-center gap-2 bg-white/10 hover:bg-white/20 px-3 py-2 rounded-xl text-sm transition-colors">
-              <div className="w-7 h-7 bg-[#ff4500] rounded-full flex items-center justify-center text-white font-bold text-xs">{user.nome[0]}</div>
+              <div className="w-7 h-7 rounded-full overflow-hidden bg-[#ff4500] flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                {user.foto ? <img src={user.foto} className="w-full h-full object-cover" alt="" /> : user.nome[0]}
+              </div>
               <div className="hidden sm:block text-left"><p className="text-white text-xs font-semibold leading-none">{user.nome}</p><p className="text-blue-300 text-xs">{PERFIL[user.perfil]}</p></div>
               <span className="text-blue-300 text-xs">▾</span>
             </button>
             {menu && (
               <div className="absolute right-0 top-full mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 py-2 w-56 z-50">
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <p className="font-bold text-gray-800 text-sm">{user.nome}</p>
-                  <p className="text-gray-400 text-xs">{user.email}</p>
-                  <p className="text-gray-400 text-xs">{PERFIL[user.perfil]} {user.conc&&`• ${user.conc}`}</p>
+                <div className="px-4 py-3 border-b border-slate-100 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-[#ff4500] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {user.foto ? <img src={user.foto} className="w-full h-full object-cover" alt="" /> : user.nome[0]}
+                  </div>
+                  <div><p className="font-bold text-gray-800 text-sm">{user.nome}</p>
+                    <p className="text-gray-400 text-xs">{user.email}</p></div>
                 </div>
-                <button onClick={handleLogout} className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 font-medium">↩ Sair</button>
+                {[['👤','Meu Perfil','perfil'],['⚙️','Configurações','config']].map(([ic,lb,pg])=>(
+                  <button key={pg} onClick={()=>{setPage(pg);setMenu(false);}}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-slate-50 flex items-center gap-3">
+                    <span>{ic}</span>{lb}
+                  </button>
+                ))}
+                <div className="border-t border-slate-100 mt-1 pt-1">
+                  <button onClick={handleLogout} className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-3">
+                    <span>↩</span>Sair
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1439,7 +1869,11 @@ const App = () => {
         {page==='negociacoes'     && <Negociacoes     motos={motos} />}
         {page==='comissoes'       && <Comissoes       motos={motos} user={user} />}
         {page==='relatorio'       && <Relatorio       motos={motos} user={user} />}
-        {page==='concessionarias' && <Concessionarias concs={concs} motos={motos} onToggle={id=>setConcs(p=>p.map(c=>c.id===id?{...c,ativa:!c.ativa}:c))} />}
+        {page==='concessionarias' && <Concessionarias concs={concs} motos={motos} users={LS.getUsers()||[]}
+            onToggle={id=>setConcs(p=>p.map(c=>c.id===id?{...c,ativa:!c.ativa}:c))}
+            onUpdateConcs={newConcs=>setConcs(newConcs)} />}
+        {page==='perfil'          && <PerfilPage      user={user} onUpdate={handleUserUpdate} onLogout={handleLogout} />}
+        {page==='config'          && <ConfigPage      user={user} onUpdate={handleUserUpdate} />}
       </main>
 
       {toast && (
