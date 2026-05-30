@@ -1143,9 +1143,15 @@ const Cadastro = ({ user, onSave }) => {
     else setPCpfErr('');
   };
 
-  // Validação de preço vs FIPE
-  const pdNum = parseFloat(pd)||0;
-  const fipeExcede = fipe.fipeRes && pdNum > 0 && pdNum > fipe.fipeRes.valor;
+  // ── Nova regra: preço final nunca pode atingir (FIPE − R$500) ──
+  const pdNum = parseFloat(pd) || 0;
+  const fipeVal    = fipe.fipeRes?.valor || 0;
+  // pd_max: maior valor que o dono pode pedir sem estourar o limite
+  // pd*1.11 + 200 < FIPE − 500  →  pd < (FIPE − 700)/1.11
+  const pdMax      = fipeVal > 700 ? Math.floor(((fipeVal - 700) / 1.11) * 100) / 100 : 0;
+  const limitePrecoFinal = fipeVal - 500;                     // teto do preço ao comprador
+  const precoFinalAtual  = pdNum > 0 ? pdNum * 1.11 + 200 : 0;
+  const fipeExcede = fipe.fipeRes && pdNum > 0 && precoFinalAtual >= limitePrecoFinal;
 
   const inp = (err) => `w-full border ${err?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]`;
   const sel = "w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#ff4500] bg-white";
@@ -1171,7 +1177,7 @@ const Cadastro = ({ user, onSave }) => {
 
     if (!ano) e.ano='Selecione o ano do veículo.';
     if (!pd || pdNum<=0) e.pd='Informe o valor desejado.';
-    if (fipeExcede) e.pd=`Valor acima da tabela FIPE (${R(fipe.fipeRes.valor)}). Reduza o preço desejado.`;
+    if (fipeExcede) e.pd=`O preço final ficaria acima do limite permitido. O valor máximo que você pode receber é ${R(pdMax)} para manter o veículo competitivo no mercado.`;
 
     setErros(e);
     return Object.keys(e).length===0;
@@ -1315,27 +1321,42 @@ const Cadastro = ({ user, onSave }) => {
         {/* Precificação + FIPE — MELHORIA 6 */}
         <Card title="Precificação">
           <label className="text-sm text-gray-500 mb-1 block">Valor desejado pelo proprietário (R$) *</label>
-          <input className={`${inp(erros.pd||fipeExcede)} text-xl font-bold`} placeholder="0,00" type="number" step="0.01" value={pd} onChange={e=>setPd(e.target.value)} />
+          <input className={`${inp(erros.pd || fipeExcede)} text-xl font-bold`} placeholder="0,00"
+            type="number" step="0.01" value={pd} onChange={e=>setPd(e.target.value)} />
 
-          {fipeExcede && (
-            <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm">
-              <p className="font-bold text-red-700">⛔ Valor acima da tabela FIPE</p>
-              <p className="text-red-600">O preço desejado <strong>{R(pdNum)}</strong> supera o valor FIPE de <strong>{R(fipe.fipeRes?.valor)}</strong>.</p>
-              <p className="text-gray-500 text-xs mt-1">Valor máximo permitido: <strong>{R(fipe.fipeRes?.valor)}</strong></p>
-              <button type="button" onClick={()=>setPd(String(fipe.fipeRes.valor))}
-                className="mt-2 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700">
-                Usar valor FIPE ({R(fipe.fipeRes?.valor)})
-              </button>
-            </div>
+          {/* Indicador em tempo real */}
+          {fipe.fipeRes && pdNum > 0 && (
+            fipeExcede ? (
+              <div className="mt-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm space-y-1.5">
+                <p className="font-bold text-red-700">✗ Valor acima do limite</p>
+                <p className="text-red-600 leading-snug">
+                  O preço final ao comprador seria <strong>{R(precoFinalAtual)}</strong>, igual ou acima do teto permitido de <strong>{R(limitePrecoFinal)}</strong> (FIPE − R$500).
+                </p>
+                <p className="text-red-600 font-medium leading-snug">
+                  Ajuste para <strong>{R(pdMax)}</strong> ou menos.
+                </p>
+                <button type="button" onClick={() => setPd(String(pdMax))}
+                  className="mt-1 text-xs bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 font-semibold">
+                  Usar valor máximo ({R(pdMax)})
+                </button>
+              </div>
+            ) : (
+              <p className="text-emerald-600 text-xs mt-2 font-medium">
+                ✓ Dentro do limite competitivo — preço final ao comprador: {R(precoFinalAtual)} &lt; {R(limitePrecoFinal)}
+              </p>
+            )
           )}
 
-          {!fipeExcede && fipe.fipeRes && pdNum>0 && (
-            <p className="text-emerald-600 text-xs mt-2">✓ Dentro do limite FIPE ({R(fipe.fipeRes.valor)})</p>
+          {/* Teto informativo quando FIPE disponível mas pd ainda vazio */}
+          {fipe.fipeRes && !pdNum && (
+            <p className="text-gray-400 text-xs mt-2">
+              Limite: proprietário pode receber até <strong className="text-gray-500">{R(pdMax)}</strong> (preço final ≤ {R(limitePrecoFinal)})
+            </p>
           )}
 
           {erros.pd && !fipeExcede && <p className="text-red-500 text-xs mt-1">{erros.pd}</p>}
 
-          {pdNum>0 && !fipeExcede && <div className="mt-4"><Breakdown pd={pdNum} /></div>}
+          {pdNum > 0 && !fipeExcede && <div className="mt-4"><Breakdown pd={pdNum} /></div>}
         </Card>
 
         <button type="submit"
