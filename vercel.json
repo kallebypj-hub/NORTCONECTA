@@ -1,3 +1,6 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/checklist", "destination": "/checklist.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

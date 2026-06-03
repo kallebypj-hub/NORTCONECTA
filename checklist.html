@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Acompanhamento Diário</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.0/firebase-database-compat.js"></script>
+  <style>
+    * { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; }
+    body { margin: 0; background: #030712; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+    @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+    .fade-up { animation: fadeUp .4s cubic-bezier(.22,1,.36,1) forwards; }
+    .live-dot { animation: pulse 1.5s infinite; }
+    .shake { animation: shake .3s ease; }
+    .cell-btn { transition: all .15s ease; }
+    .cell-btn:active { transform: scale(.92); }
+  </style>
+</head>
+<body class="bg-gray-950 text-white">
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+// ══════════════════════════════════════════════════════════════
+//  🔧 CONFIGURAÇÃO FIREBASE
+//  Acesse console.firebase.google.com, crie um projeto,
+//  ative o Realtime Database e cole o config abaixo.
+// ══════════════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyBeSKLG5MrKyo6RKlJLbYL-9cX9DJa8ZZw",
+  authDomain: "check-list-nort.firebaseapp.com",
+  databaseURL: "https://check-list-nort-default-rtdb.firebaseio.com",
+  projectId: "check-list-nort",
+  storageBucket: "check-list-nort.firebasestorage.app",
+  messagingSenderId: "599908852285",
+  appId: "1:599908852285:web:b8378dafd670a6c2f44054"
+};
+
+// ══════════════════════════════════════════════════════════════
+//  🔑 SENHAS DOS GESTORES — altere antes de publicar
+// ══════════════════════════════════════════════════════════════
+const SENHAS = {
+  EXTERNOS: "ext123",
+  SHOWROOM: "show123",
+  ONLINE:   "web123",
+  ADMIN:    "admin999"
+};
+
+// ══════════════════════════════════════════════════════════════
+//  👥 EQUIPES E VENDEDORES
+// ══════════════════════════════════════════════════════════════
+const EQUIPES = {
+  EXTERNOS: {
+    label: "EXTERNOS",
+    cor: "#3b82f6",
+    corBg: "#1e3a5f",
+    emoji: "🏍️",
+    vendedores: ["AMSTERDAN","FRANZÉ","IVANILSON","OSNAR","ESTEVÃO","KALLEBE","FRANÇA","LIBERATO","ARISTONIO"]
+  },
+  SHOWROOM: {
+    label: "SHOWROOM",
+    cor: "#f97316",
+    corBg: "#431407",
+    emoji: "🏪",
+    vendedores: ["MICHAEL","JARDEL","GILVAN","LUZIA","MÁRCIA","MONIQUE","ELAYNE","VENÍCIO"]
+  },
+  ONLINE: {
+    label: "ON-LINE",
+    cor: "#22c55e",
+    corBg: "#052e16",
+    emoji: "💻",
+    vendedores: ["PRISCILA","DEYSIANE","HIAGO","PALOMA","ELINETE"]
+  }
+};
+
+// ══════════════════════════════════════════════════════════════
+//  ✅ TAREFAS DIÁRIAS
+// ══════════════════════════════════════════════════════════════
+const TAREFAS = [
+  { key: "previsao",  label: "ENVIAR PREVISÃO DO DIA",     curta: "PREV."    },
+  { key: "bomdia",    label: "POST INÍCIO BOM DIA!",        curta: "BOM DIA"  },
+  { key: "consorcio", label: "POST CONTEÚDO CONSÓRCIO",     curta: "CONSÓRC." },
+  { key: "cotas",     label: "POST COTAS DE REPOSIÇÃO",     curta: "COTAS"    },
+  { key: "metacrm",   label: "META CRM 06 CLIENTES",        curta: "CRM"      },
+  { key: "ligacao",   label: "LIGAÇÃO PARA 5 CLIENTES",     curta: "LIGAÇÃO"  },
+  { key: "ficha",     label: "PASSAR UMA FICHA",            curta: "FICHA"    },
+];
+
+// ══════════════════════════════════════════════════════════════
+//  FIREBASE INIT
+// ══════════════════════════════════════════════════════════════
+const CONFIGURADO = Object.values(FIREBASE_CONFIG).every(v => v !== "");
+let db = null;
+if (CONFIGURADO) {
+  try { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.database(); } catch(e) {}
+}
+
+// ══════════════════════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════════════════════
+const hoje = () => new Date().toISOString().slice(0, 10);
+const mesAtual = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; };
+const diasNoMes = (mes) => { const [y,m]=mes.split('-'); return new Date(+y,+m,0).getDate(); };
+
+const formatDataLonga = (ds) => {
+  const d = new Date(ds + 'T12:00:00');
+  return d.toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+};
+
+const isOk = (dadosV, tarefa) => !!(dadosV && dadosV[tarefa]);
+const isCompleto = (dadosV) => dadosV && TAREFAS.every(t => dadosV[t.key]);
+const totalOk = (dadosV) => dadosV ? TAREFAS.filter(t => dadosV[t.key]).length : 0;
+
+// ══════════════════════════════════════════════════════════════
+//  HOOKS FIREBASE
+// ══════════════════════════════════════════════════════════════
+function useDadosDia(data) {
+  const [dados, setDados] = useState({});
+  useEffect(() => {
+    if (!db || !data) return;
+    const ref = db.ref(`checklist/${data}`);
+    ref.on('value', snap => setDados(snap.val() || {}));
+    return () => ref.off();
+  }, [data]);
+  return dados;
+}
+
+function useDadosMes(mes) {
+  const [dados, setDados] = useState({});
+  useEffect(() => {
+    if (!db || !mes) return;
+    const ref = db.ref('checklist');
+    ref.orderByKey().startAt(mes).endAt(mes + '').on('value', snap => setDados(snap.val() || {}));
+    return () => ref.off();
+  }, [mes]);
+  return dados;
+}
+
+async function salvar(data, equipe, vendedor, tarefa, valor) {
+  if (!db) return;
+  await db.ref(`checklist/${data}/${equipe}/${vendedor}/${tarefa}`).set(valor);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: Tela de Setup Firebase
+// ══════════════════════════════════════════════════════════════
+const TelaSetup = () => (
+  <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="w-full max-w-xl bg-gray-900 border border-gray-800 rounded-2xl p-8 fade-up">
+      <div className="text-center mb-8">
+        <div className="text-6xl mb-4">🔧</div>
+        <h1 className="text-2xl font-black text-white tracking-wider">CONFIGURAÇÃO INICIAL</h1>
+        <p className="text-gray-400 mt-2 text-sm">Configure o Firebase para ativar a nuvem</p>
+      </div>
+      <div className="space-y-4 text-sm">
+        <div className="bg-gray-800 rounded-xl p-4">
+          <p className="text-yellow-400 font-bold mb-3">📋 PASSO A PASSO (5 minutos):</p>
+          <ol className="text-gray-300 space-y-2 list-decimal list-inside leading-relaxed">
+            <li>Acesse <span className="text-blue-400 font-mono">console.firebase.google.com</span></li>
+            <li>Clique em <b>"Criar um projeto"</b> → dê um nome (ex: nort-checklist)</li>
+            <li>No menu lateral, clique em <b>Realtime Database</b> → Criar banco</li>
+            <li>Escolha <b>"Modo de teste"</b> e confirme</li>
+            <li>Vá em <b>Configurações do Projeto</b> (ícone ⚙️) → aba <b>Geral</b></li>
+            <li>Role até <b>"Seus aplicativos"</b> → clique no ícone <b>{"</>"}</b> (Web)</li>
+            <li>Registre o app e copie o <code className="text-yellow-300 bg-gray-900 px-1 rounded">firebaseConfig</code></li>
+            <li>Cole os valores no arquivo <b>checklist.html</b> na variável <code className="text-yellow-300">FIREBASE_CONFIG</code></li>
+          </ol>
+        </div>
+        <div className="bg-blue-950 border border-blue-800 rounded-xl p-4 text-xs text-blue-300">
+          💡 O plano gratuito do Firebase suporta <b>100 conexões simultâneas</b> e <b>1GB de dados</b> — mais do que suficiente para esta aplicação.
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: TV — Tabela de uma Equipe
+// ══════════════════════════════════════════════════════════════
+const TabelaTV = ({ equipeKey, dados }) => {
+  const eq = EQUIPES[equipeKey];
+  const dadosEq = dados[equipeKey] || {};
+  const completados = eq.vendedores.filter(v => isCompleto(dadosEq[v])).length;
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0">
+      {/* Header da equipe */}
+      <div className="rounded-t-lg py-2 px-3 flex items-center justify-between" style={{ background: eq.cor }}>
+        <span className="font-black text-white text-base tracking-widest">{eq.emoji} {eq.label}</span>
+        <span className="bg-black/30 text-white text-xs font-bold px-2 py-0.5 rounded-full">
+          {completados}/{eq.vendedores.length}
+        </span>
+      </div>
+
+      {/* Tabela */}
+      <div className="flex-1 overflow-hidden rounded-b-lg border border-gray-800">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr style={{ background: eq.corBg }}>
+              <th className="text-left px-2 py-1.5 text-gray-300 font-semibold text-xs">VENDEDOR(A)</th>
+              {TAREFAS.map(t => (
+                <th key={t.key} className="text-center px-0.5 py-1.5 text-gray-400 font-medium" style={{ fontSize: '9px' }}>
+                  {t.curta}
+                </th>
+              ))}
+              <th className="text-center px-1 py-1.5 text-gray-300 font-semibold" style={{ fontSize: '9px' }}>RESUMO</th>
+            </tr>
+          </thead>
+          <tbody>
+            {eq.vendedores.map((v, i) => {
+              const dv = dadosEq[v] || {};
+              const completo = isCompleto(dv);
+              const qtd = totalOk(dv);
+              return (
+                <tr key={v} className={i % 2 === 0 ? 'bg-gray-950' : 'bg-gray-900'}>
+                  <td className="px-2 py-1 font-bold text-white text-xs whitespace-nowrap">{v}</td>
+                  {TAREFAS.map(t => (
+                    <td key={t.key} className="text-center py-1 px-0.5">
+                      <span className={`text-xs font-black px-1 py-0.5 rounded ${dv[t.key] ? 'bg-green-600 text-white' : 'bg-red-700 text-white'}`}
+                        style={{ fontSize: '9px' }}>
+                        {dv[t.key] ? 'OK' : 'F'}
+                      </span>
+                    </td>
+                  ))}
+                  <td className="text-center py-1 px-1">
+                    <span className={`font-black px-1 py-0.5 rounded ${completo ? 'bg-green-600 text-white' : qtd > 0 ? 'bg-yellow-600 text-white' : 'bg-red-700 text-white'}`}
+                      style={{ fontSize: '9px' }}>
+                      {completo ? 'COMPLETO' : 'INCOMP.'}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: TV Dashboard
+// ══════════════════════════════════════════════════════════════
+const TVDashboard = ({ onSair }) => {
+  const [data, setData] = useState(hoje());
+  const [mostrarData, setMostrarData] = useState(false);
+  const dados = useDadosDia(data);
+  const [agora, setAgora] = useState(new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setAgora(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const totalVendedores = Object.values(EQUIPES).reduce((a, e) => a + e.vendedores.length, 0);
+  const totalCompletos = Object.keys(EQUIPES).reduce((a, eq) => {
+    const dEq = dados[eq] || {};
+    return a + EQUIPES[eq].vendedores.filter(v => isCompleto(dEq[v])).length;
+  }, 0);
+
+  const hora = agora.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  const dataLabel = agora.toLocaleDateString('pt-BR', { weekday:'long', day:'numeric', month:'long' });
+  const pct = totalVendedores > 0 ? Math.round(totalCompletos / totalVendedores * 100) : 0;
+
+  return (
+    <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
+      {/* ── HEADER ── */}
+      <div className="shrink-0 bg-gray-900 border-b border-gray-800 px-5 py-2.5 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-black tracking-widest text-white uppercase leading-tight">
+            ACOMPANHAMENTO PROCESSO DIÁRIO
+          </h1>
+          <p className="text-gray-400 text-xs capitalize mt-0.5">{dataLabel}</p>
+        </div>
+
+        <div className="flex items-center gap-5">
+          {/* Barra de progresso geral */}
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-1">PROGRESSO GERAL</div>
+            <div className="flex items-center gap-2">
+              <div className="w-32 h-3 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full rounded-full transition-all duration-700"
+                  style={{ width: `${pct}%`, background: pct === 100 ? '#22c55e' : pct > 50 ? '#f97316' : '#ef4444' }}>
+                </div>
+              </div>
+              <span className="text-white font-black text-sm">{pct}%</span>
+            </div>
+          </div>
+
+          {/* Contador */}
+          <div className="bg-gray-800 rounded-lg px-3 py-1.5 text-center">
+            <div className="text-xs text-gray-400">COMPLETOS</div>
+            <div className="text-xl font-black text-green-400">{totalCompletos}/{totalVendedores}</div>
+          </div>
+
+          {/* Relógio */}
+          <div className="font-mono text-2xl font-black text-white">{hora}</div>
+
+          {/* Live indicator */}
+          <div className="flex items-center gap-1.5">
+            <span className="live-dot w-2 h-2 rounded-full bg-green-400 inline-block"></span>
+            <span className="text-xs text-green-400 font-bold">AO VIVO</span>
+          </div>
+
+          {onSair && (
+            <button onClick={onSair}
+              className="text-xs text-gray-600 hover:text-white border border-gray-700 hover:border-gray-500 px-2 py-1 rounded transition-all">
+              SAIR
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── DATE BAR ── */}
+      <div className="shrink-0 bg-gray-900/50 border-b border-gray-800/50 px-5 py-1 flex items-center gap-3">
+        <button onClick={() => setMostrarData(v => !v)} className="text-xs text-gray-600 hover:text-gray-400">
+          📅 {mostrarData ? 'fechar' : 'mudar data'}
+        </button>
+        {mostrarData && (
+          <>
+            <input type="date" value={data} onChange={e => setData(e.target.value)}
+              className="bg-gray-800 text-white text-xs px-2 py-1 rounded border border-gray-700 outline-none" />
+            <button onClick={() => { setData(hoje()); setMostrarData(false); }}
+              className="text-xs text-blue-400 hover:text-blue-300">hoje</button>
+          </>
+        )}
+        {!mostrarData && data !== hoje() && (
+          <span className="text-xs text-yellow-400">Exibindo: {formatDataLonga(data)}</span>
+        )}
+      </div>
+
+      {/* ── TABLES ── */}
+      <div className="flex-1 p-3 flex gap-3 overflow-hidden">
+        {Object.keys(EQUIPES).map(eq => (
+          <TabelaTV key={eq} equipeKey={eq} dados={dados} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: Painel do Gestor
+// ══════════════════════════════════════════════════════════════
+const PainelGestor = ({ equipeKey, isAdmin, onSair }) => {
+  const [data, setData] = useState(hoje());
+  const [equipeAtiva, setEquipeAtiva] = useState(equipeKey === 'ADMIN' ? 'EXTERNOS' : equipeKey);
+  const dados = useDadosDia(data);
+
+  const eq = EQUIPES[equipeAtiva];
+  const dadosEq = dados[equipeAtiva] || {};
+  const equipes = isAdmin ? Object.keys(EQUIPES) : [equipeKey];
+
+  const toggle = (vendedor, tarefa) => {
+    const atual = isOk(dadosEq[vendedor], tarefa);
+    salvar(data, equipeAtiva, vendedor, tarefa, !atual);
+  };
+
+  const marcarTodos = (vendedor, valor) => {
+    TAREFAS.forEach(t => salvar(data, equipeAtiva, vendedor, t.key, valor));
+  };
+
+  const completados = eq.vendedores.filter(v => isCompleto(dadosEq[v])).length;
+
+  return (
+    <div className="min-h-screen bg-gray-950 fade-up">
+      {/* Header */}
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-lg font-black tracking-wider text-white">
+            {isAdmin ? '⚙️ ADMIN — TODAS AS EQUIPES' : `${eq.emoji} GESTOR ${eq.label}`}
+          </h1>
+          <p className="text-gray-500 text-xs">{formatDataLonga(data)}</p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <input type="date" value={data} onChange={e => setData(e.target.value)}
+            className="bg-gray-800 text-white text-sm px-3 py-1.5 rounded-lg border border-gray-700 outline-none focus:border-blue-500" />
+          <button onClick={() => setData(hoje())}
+            className="text-xs text-blue-400 hover:text-blue-300 border border-blue-800 px-2 py-1.5 rounded-lg">
+            Hoje
+          </button>
+          <button onClick={onSair}
+            className="text-sm text-red-400 hover:text-red-300 border border-red-900 px-3 py-1.5 rounded-lg transition-all">
+            Sair
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs (admin) */}
+      {isAdmin && (
+        <div className="flex bg-gray-900/70 border-b border-gray-800">
+          {Object.keys(EQUIPES).map(eq => (
+            <button key={eq} onClick={() => setEquipeAtiva(eq)}
+              className={`px-5 py-2.5 text-sm font-bold tracking-wider border-b-2 transition-all ${equipeAtiva === eq ? 'text-white' : 'text-gray-500 hover:text-gray-300 border-transparent'}`}
+              style={{ borderBottomColor: equipeAtiva === eq ? EQUIPES[eq].cor : undefined }}>
+              {EQUIPES[eq].emoji} {EQUIPES[eq].label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="p-4">
+        {/* Estatísticas rápidas */}
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="bg-green-950 border border-green-900 rounded-xl p-3 text-center">
+            <div className="text-2xl font-black text-green-400">{completados}</div>
+            <div className="text-xs text-green-600 font-semibold">COMPLETOS</div>
+          </div>
+          <div className="bg-red-950 border border-red-900 rounded-xl p-3 text-center">
+            <div className="text-2xl font-black text-red-400">{eq.vendedores.length - completados}</div>
+            <div className="text-xs text-red-600 font-semibold">INCOMPLETOS</div>
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3 text-center">
+            <div className="text-2xl font-black text-white">{eq.vendedores.length}</div>
+            <div className="text-xs text-gray-500 font-semibold">TOTAL EQUIPE</div>
+          </div>
+        </div>
+
+        {/* Tabela */}
+        <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-900">
+                <th className="text-left px-4 py-3 text-gray-400 font-semibold text-sm sticky left-0 bg-gray-900">VENDEDOR(A)</th>
+                {TAREFAS.map(t => (
+                  <th key={t.key} className="text-center px-2 py-3 text-gray-400 font-semibold text-xs min-w-[80px]">
+                    {t.label}
+                  </th>
+                ))}
+                <th className="text-center px-2 py-3 text-gray-400 font-semibold text-xs">RESUMO</th>
+                <th className="text-center px-2 py-3 text-gray-500 font-medium text-xs">AÇÕES</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eq.vendedores.map((v, i) => {
+                const dv = dadosEq[v] || {};
+                const completo = isCompleto(dv);
+                const qtd = totalOk(dv);
+                return (
+                  <tr key={v}
+                    className={`border-t border-gray-800/60 ${i % 2 === 0 ? 'bg-gray-950' : 'bg-gray-900/40'} hover:bg-gray-800/30 transition-colors`}>
+                    <td className="px-4 py-2 font-bold text-white text-sm sticky left-0 bg-inherit">
+                      {v}
+                      {completo && <span className="ml-2 text-green-400 text-xs">✓</span>}
+                    </td>
+                    {TAREFAS.map(t => {
+                      const ok = isOk(dv, t.key);
+                      return (
+                        <td key={t.key} className="text-center py-2 px-1">
+                          <button onClick={() => toggle(v, t.key)}
+                            className={`cell-btn text-xs font-bold px-3 py-1.5 rounded-lg w-full ${ok
+                              ? 'bg-green-600 hover:bg-green-500 text-white'
+                              : 'bg-red-700 hover:bg-red-600 text-white'}`}>
+                            {ok ? 'OK' : 'FALTA'}
+                          </button>
+                        </td>
+                      );
+                    })}
+                    <td className="text-center py-2 px-2">
+                      <span className={`text-xs font-black px-2 py-1.5 rounded-lg ${completo
+                        ? 'bg-green-600 text-white'
+                        : qtd > 0 ? 'bg-yellow-600 text-white'
+                        : 'bg-red-700 text-white'}`}>
+                        {completo ? 'COMPLETO' : 'INCOMPLETO'}
+                      </span>
+                    </td>
+                    <td className="text-center py-2 px-2">
+                      <div className="flex gap-1 justify-center">
+                        <button onClick={() => marcarTodos(v, true)}
+                          className="text-xs text-green-400 hover:text-green-300 border border-green-900 hover:border-green-700 px-1.5 py-1 rounded transition-all"
+                          title="Marcar tudo OK">✓ All</button>
+                        <button onClick={() => marcarTodos(v, false)}
+                          className="text-xs text-red-400 hover:text-red-300 border border-red-900 hover:border-red-700 px-1.5 py-1 rounded transition-all"
+                          title="Limpar tudo">✗ All</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="text-center text-gray-600 text-xs mt-4">
+          Clique em qualquer célula para alternar entre OK e FALTA • Sincroniza automaticamente em tempo real
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: Relatório Mensal
+// ══════════════════════════════════════════════════════════════
+const RelatorioMensal = ({ onSair }) => {
+  const [mes, setMes] = useState(mesAtual());
+  const [equipeKey, setEquipeKey] = useState('EXTERNOS');
+  const dados = useDadosMes(mes);
+
+  const eq = EQUIPES[equipeKey];
+  const nDias = diasNoMes(mes);
+  const [ano, mesNum] = mes.split('-').map(Number);
+  const hoje_ = hoje();
+
+  const matriz = eq.vendedores.map(v => {
+    let completados = 0;
+    const dias = Array.from({ length: nDias }, (_, i) => {
+      const d = String(i + 1).padStart(2, '0');
+      const ds = `${ano}-${String(mesNum).padStart(2,'0')}-${d}`;
+      if (ds > hoje_) return 'futuro';
+      const dv = ((dados[ds] || {})[equipeKey] || {})[v] || {};
+      const ok = isCompleto(dv);
+      const parcial = !ok && totalOk(dv) > 0;
+      if (ok) completados++;
+      return ok ? 'completo' : parcial ? 'parcial' : 'falta';
+    });
+    return { nome: v, dias, completados };
+  }).sort((a, b) => b.completados - a.completados);
+
+  const diasPassados = Array.from({ length: nDias }, (_, i) => {
+    const d = String(i + 1).padStart(2, '0');
+    return `${ano}-${String(mesNum).padStart(2,'0')}-${d}` <= hoje_;
+  }).filter(Boolean).length;
+
+  return (
+    <div className="min-h-screen bg-gray-950 fade-up">
+      {/* Header */}
+      <div className="bg-gray-900 border-b border-gray-800 px-4 py-3 flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-lg font-black tracking-wider text-white">📊 RELATÓRIO MENSAL</h1>
+        <div className="flex items-center gap-2">
+          <input type="month" value={mes} onChange={e => setMes(e.target.value)}
+            className="bg-gray-800 text-white text-sm px-3 py-1.5 rounded-lg border border-gray-700 outline-none" />
+          <button onClick={onSair}
+            className="text-sm text-red-400 hover:text-red-300 border border-red-900 px-3 py-1.5 rounded-lg">
+            Sair
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex bg-gray-900/70 border-b border-gray-800">
+        {Object.keys(EQUIPES).map(eq => (
+          <button key={eq} onClick={() => setEquipeKey(eq)}
+            className={`px-5 py-2.5 text-sm font-bold tracking-wider border-b-2 transition-all ${equipeKey === eq ? 'text-white' : 'text-gray-500 hover:text-gray-300 border-transparent'}`}
+            style={{ borderBottomColor: equipeKey === eq ? EQUIPES[eq].cor : undefined }}>
+            {EQUIPES[eq].emoji} {EQUIPES[eq].label}
+          </button>
+        ))}
+      </div>
+
+      <div className="p-4">
+        {/* Legenda */}
+        <div className="flex items-center gap-4 mb-4 text-xs text-gray-400 flex-wrap">
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-600 inline-block"></span>Completo</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-yellow-600 inline-block"></span>Parcial</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-700 inline-block"></span>Falta</span>
+          <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-gray-700 inline-block"></span>Futuro</span>
+          <span className="ml-auto text-gray-600">{diasPassados} dias úteis passados em {nDias}</span>
+        </div>
+
+        {/* Ranking + grade */}
+        <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <table className="border-collapse text-xs">
+            <thead>
+              <tr className="bg-gray-900">
+                <th className="text-left px-3 py-2.5 text-gray-400 font-semibold whitespace-nowrap sticky left-0 bg-gray-900 z-10">#  VENDEDOR(A)</th>
+                <th className="px-2 py-2.5 text-green-400 font-bold whitespace-nowrap">✓ DIAS</th>
+                {Array.from({ length: nDias }, (_, i) => (
+                  <th key={i} className="w-6 py-2.5 text-gray-500 font-normal text-center">{i+1}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {matriz.map((row, i) => (
+                <tr key={row.nome} className={`border-t border-gray-800/60 ${i % 2 === 0 ? 'bg-gray-950' : 'bg-gray-900/40'}`}>
+                  <td className="px-3 py-1.5 font-bold text-white whitespace-nowrap sticky left-0 bg-inherit z-10">
+                    <span className="text-gray-500 mr-1.5">
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`}
+                    </span>
+                    {row.nome}
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    <span className={`font-black ${row.completados === diasPassados ? 'text-green-400' : row.completados > diasPassados/2 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {row.completados}
+                    </span>
+                  </td>
+                  {row.dias.map((status, d) => (
+                    <td key={d} className="py-1.5 px-0.5 text-center">
+                      <span className={`inline-block w-4 h-4 rounded-sm ${
+                        status === 'completo' ? 'bg-green-600' :
+                        status === 'parcial'  ? 'bg-yellow-600' :
+                        status === 'futuro'   ? 'bg-gray-800' :
+                                               'bg-red-700'
+                      }`}></span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Resumo da equipe */}
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3">
+            <p className="text-xs text-gray-500 mb-2">🏆 MELHOR DO MÊS</p>
+            {matriz[0] && (
+              <div>
+                <p className="font-black text-white text-lg">{matriz[0].nome}</p>
+                <p className="text-green-400 text-sm">{matriz[0].completados} dias completos</p>
+              </div>
+            )}
+          </div>
+          <div className="bg-gray-900 border border-gray-800 rounded-xl p-3">
+            <p className="text-xs text-gray-500 mb-2">📈 MÉDIA DA EQUIPE</p>
+            <p className="font-black text-white text-lg">
+              {diasPassados > 0
+                ? Math.round(matriz.reduce((a, r) => a + r.completados, 0) / matriz.length * 10) / 10
+                : 0} dias
+            </p>
+            <p className="text-gray-500 text-xs">de {diasPassados} possíveis</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: Login
+// ══════════════════════════════════════════════════════════════
+const TelaLogin = ({ equipeKey, onEntrar, onVoltar }) => {
+  const [senha, setSenha] = useState('');
+  const [erro, setErro] = useState(false);
+  const [erroMsg, setErroMsg] = useState('');
+  const inputRef = useRef();
+
+  const eq = equipeKey === 'ADMIN'
+    ? { label:'ADMIN', cor:'#8b5cf6', emoji:'⚙️' }
+    : EQUIPES[equipeKey];
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const tentar = () => {
+    if (senha === SENHAS[equipeKey]) {
+      onEntrar();
+    } else {
+      setErroMsg('Senha incorreta');
+      setErro(true);
+      setSenha('');
+      setTimeout(() => { setErro(false); setErroMsg(''); }, 2000);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-950">
+      <div className="w-full max-w-sm bg-gray-900 border border-gray-800 rounded-2xl p-8 fade-up">
+        <div className="text-center mb-7">
+          <div className="w-16 h-16 rounded-2xl mx-auto mb-3 flex items-center justify-center text-3xl font-black"
+            style={{ background: eq.cor }}>
+            {eq.emoji}
+          </div>
+          <h2 className="text-xl font-black text-white tracking-wider">{eq.label}</h2>
+          <p className="text-gray-500 text-sm mt-1">Digite a senha de acesso</p>
+        </div>
+
+        <input
+          ref={inputRef}
+          type="password"
+          value={senha}
+          onChange={e => setSenha(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && tentar()}
+          placeholder="••••••"
+          className={`w-full text-center text-xl tracking-widest bg-gray-800 text-white px-4 py-3.5 rounded-xl border-2 outline-none transition-all ${erro ? 'border-red-500 shake' : 'border-gray-700 focus:border-blue-500'}`}
+        />
+        {erroMsg && <p className="text-red-400 text-sm text-center mt-2">{erroMsg}</p>}
+
+        <button onClick={tentar}
+          className="w-full mt-4 py-3.5 rounded-xl font-black text-white tracking-wider transition-all hover:opacity-90 active:scale-95"
+          style={{ background: eq.cor }}>
+          ENTRAR
+        </button>
+
+        <button onClick={onVoltar}
+          className="w-full mt-3 py-2 text-gray-600 hover:text-gray-300 text-sm transition-all">
+          ← Voltar
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ══════════════════════════════════════════════════════════════
+//  COMPONENTE: Tela Inicial
+// ══════════════════════════════════════════════════════════════
+const TelaInicial = ({ onTV, onGestor, onAdmin, onMensal }) => (
+  <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gray-950 fade-up">
+    <div className="mb-10 text-center">
+      <div className="text-5xl mb-3">📋</div>
+      <h1 className="text-3xl font-black tracking-widest text-white">ACOMPANHAMENTO DIÁRIO</h1>
+      <p className="text-gray-500 text-sm mt-2">Sistema de controle de processos • Tempo real</p>
+    </div>
+
+    {/* TV */}
+    <div className="w-full max-w-md mb-8">
+      <button onClick={onTV}
+        className="w-full py-5 rounded-2xl font-black text-xl tracking-widest text-white transition-all transform hover:scale-[1.02] active:scale-95 shadow-xl flex items-center justify-center gap-3"
+        style={{ background: 'linear-gradient(135deg, #1d4ed8, #3b82f6)' }}>
+        📺 MODO TV — DASHBOARD
+      </button>
+      <p className="text-center text-gray-600 text-xs mt-2">Exibe todas as equipes em tempo real · Ideal para TV</p>
+    </div>
+
+    {/* Gestores */}
+    <div className="w-full max-w-md space-y-3 mb-6">
+      <p className="text-gray-600 text-xs text-center uppercase tracking-widest mb-1">Acesso do Gestor</p>
+      {Object.keys(EQUIPES).map(eq => (
+        <button key={eq} onClick={() => onGestor(eq)}
+          className="w-full py-4 rounded-xl font-black text-lg tracking-wider text-white transition-all transform hover:scale-[1.02] active:scale-95 flex items-center justify-center gap-2"
+          style={{ background: `linear-gradient(135deg, ${EQUIPES[eq].corBg}, ${EQUIPES[eq].cor}99)`, border: `1px solid ${EQUIPES[eq].cor}55` }}>
+          {EQUIPES[eq].emoji} GESTOR {EQUIPES[eq].label}
+        </button>
+      ))}
+    </div>
+
+    {/* Admin + Mensal */}
+    <div className="w-full max-w-md grid grid-cols-2 gap-3">
+      <button onClick={onAdmin}
+        className="py-3.5 rounded-xl bg-purple-900/60 border border-purple-800 hover:bg-purple-800/60 text-white font-bold text-sm tracking-wider transition-all active:scale-95">
+        ⚙️ ADMIN
+      </button>
+      <button onClick={onMensal}
+        className="py-3.5 rounded-xl bg-gray-900 border border-gray-700 hover:bg-gray-800 text-white font-bold text-sm tracking-wider transition-all active:scale-95">
+        📊 RELATÓRIO MENSAL
+      </button>
+    </div>
+
+    <p className="text-gray-700 text-xs mt-8">
+      Compartilhe o link desta página com cada gestor · Os dados sincronizam em tempo real
+    </p>
+  </div>
+);
+
+// ══════════════════════════════════════════════════════════════
+//  APP PRINCIPAL
+// ══════════════════════════════════════════════════════════════
+const App = () => {
+  const [tela, setTela] = useState('home');
+  const [equipe, setEquipe] = useState(null);
+
+  // Suporte a query params para links diretos
+  // Ex: ?modo=tv → abre TV direto
+  // Ex: ?equipe=EXTERNOS → vai para login da equipe
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const modo = p.get('modo');
+    const eq   = p.get('equipe')?.toUpperCase();
+    if (modo === 'tv') { setTela('tv'); return; }
+    if (eq === 'ADMIN') { setEquipe('ADMIN'); setTela('login'); return; }
+    if (eq && EQUIPES[eq]) { setEquipe(eq); setTela('login'); }
+  }, []);
+
+  if (!CONFIGURADO) return <TelaSetup />;
+
+  if (tela === 'tv')
+    return <TVDashboard onSair={() => setTela('home')} />;
+
+  if (tela === 'mensal')
+    return <RelatorioMensal onSair={() => setTela('home')} />;
+
+  if (tela === 'login')
+    return (
+      <TelaLogin
+        equipeKey={equipe}
+        onEntrar={() => setTela(equipe === 'ADMIN' ? 'admin' : 'gestor')}
+        onVoltar={() => setTela('home')}
+      />
+    );
+
+  if (tela === 'gestor')
+    return <PainelGestor equipeKey={equipe} isAdmin={false} onSair={() => setTela('home')} />;
+
+  if (tela === 'admin')
+    return <PainelGestor equipeKey="ADMIN" isAdmin={true} onSair={() => setTela('home')} />;
+
+  return (
+    <TelaInicial
+      onTV={() => setTela('tv')}
+      onGestor={eq => { setEquipe(eq); setTela('login'); }}
+      onAdmin={() => { setEquipe('ADMIN'); setTela('login'); }}
+      onMensal={() => setTela('mensal')}
+    />
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
