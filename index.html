@@ -18,6 +18,22 @@
   <script>tailwind.config={theme:{extend:{colors:{primary:'#0a0a0a',secondary:'#ff4500'}}}}</script>
   <!-- Google Identity Services — substituir GOOGLE_CLIENT_ID quando tiver o Client ID -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyB_CunPnmB9rU4L1pqYvWUcJuqbSvh6u9I",
+      authDomain: "frenzzo.firebaseapp.com",
+      projectId: "frenzzo",
+      storageBucket: "frenzzo.firebasestorage.app",
+      messagingSenderId: "408035749335",
+      appId: "1:408035749335:web:bee5a57d6ce5fa3d5b2f92"
+    });
+    const db = firebase.firestore();
+    // Persistência offline — app funciona sem internet
+    db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+  </script>
   <!-- Favicon: quadrado laranja com letra F em branco bold -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ff4500'/%3E%3Ctext x='16' y='23' text-anchor='middle' font-family='Arial Black,sans-serif' font-size='20' font-weight='900' fill='white'%3EF%3C/text%3E%3C/svg%3E">
   <style>
@@ -158,6 +174,52 @@ const LS = {
   saveChats  : (c) => { try { localStorage.setItem('nc_chats', JSON.stringify(c)); } catch {} },
 };
 
+// ══════════════════════════════════════════════════════════════
+// FIRESTORE SYNC — camada de persistência em nuvem
+// ══════════════════════════════════════════════════════════════
+const FS = {
+  // MOTOS
+  saveMoto:  async (m)  => { try { await db.collection('motos').doc(String(m.id)).set(m); } catch(e) { console.warn('[FS]',e); } },
+  saveMotos: async (ms) => { try { const b=db.batch(); ms.forEach(m=>b.set(db.collection('motos').doc(String(m.id)),m)); await b.commit(); } catch(e) { console.warn('[FS]',e); } },
+  getMotos:  async ()   => { try { const s=await db.collection('motos').get(); return s.empty?null:s.docs.map(d=>d.data()); } catch(e){ return null; } },
+  deleteMoto:async (id) => { try { await db.collection('motos').doc(String(id)).delete(); } catch(e) {} },
+
+  // USERS
+  saveUser:  async (u)  => { try { await db.collection('users').doc(String(u.id)).set(u); } catch(e) { console.warn('[FS]',e); } },
+  saveUsers: async (us) => { try { const b=db.batch(); us.forEach(u=>b.set(db.collection('users').doc(String(u.id)),u)); await b.commit(); } catch(e) { console.warn('[FS]',e); } },
+  getUsers:  async ()   => { try { const s=await db.collection('users').get(); return s.empty?null:s.docs.map(d=>d.data()); } catch(e){ return null; } },
+
+  // CONCS
+  saveConcs: async (cs) => { try { const b=db.batch(); cs.forEach(c=>b.set(db.collection('concs').doc(String(c.id)),c)); await b.commit(); } catch(e) { console.warn('[FS]',e); } },
+  getConcs:  async ()   => { try { const s=await db.collection('concs').get(); return s.empty?null:s.docs.map(d=>d.data()); } catch(e){ return null; } },
+
+  // CHATS — salva conversa individual
+  saveChat: async (chats) => {
+    try {
+      const b = db.batch();
+      Object.entries(chats).forEach(([motoId, convs]) =>
+        Object.entries(convs).forEach(([comprId, msgs]) =>
+          b.set(db.collection('chats').doc(`${motoId}_${comprId}`), {motoId, comprId, msgs})
+        )
+      );
+      await b.commit();
+    } catch(e) { console.warn('[FS]',e); }
+  },
+  getChats: async () => {
+    try {
+      const s = await db.collection('chats').get();
+      if (s.empty) return null;
+      const r = {};
+      s.docs.forEach(d => { const {motoId,comprId,msgs}=d.data(); if(!r[motoId])r[motoId]={}; r[motoId][comprId]=msgs; });
+      return r;
+    } catch(e){ return null; }
+  },
+
+  // SUPORTE
+  saveSuporteMsg: async (msg) => { try { await db.collection('suporte').add(msg); } catch(e) { console.warn('[FS]',e); } },
+  getSuporteAll:  async ()    => { try { const s=await db.collection('suporte').orderBy('data','asc').get(); return s.docs.map(d=>d.data()); } catch(e){ return []; } },
+};
+
 // ── Pricing ─────────────────────────────────────────────────
 const calc = (pd, fipeValor = 0) => {
   const p = parseFloat(pd) || 0;
@@ -215,8 +277,8 @@ const TIPO_INFO = {
   vendedor:  { icon:'🏪', label:'Vendedor',  desc:'Trabalho em uma concessionária parceira FRENZZO.' },
 };
 
-const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
-  const [tipo,      setTipo]     = useState(null);   // null | 'comprador' | 'vendedor'
+const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle, onGoPublic }) => {
+  const [tipo,      setTipo]     = useState('comprador');  // 'comprador' | 'vendedor'
   const [email,     setEmail]    = useState('');
   const [senha,     setSenha]    = useState('');
   const [err,       setErr]      = useState('');
@@ -290,64 +352,6 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
       { theme:'outline', size:'large', width:'100%', text:'signin_with', shape:'pill', locale:'pt-BR' });
   }, [tipo]);
 
-  // ── Tela 1: seleção de tipo ────────────────────────────────
-  if (!tipo) return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{background:'#0a0a0a'}}>
-      <div className="w-full max-w-sm">
-        {/* Logo + tagline */}
-        <div className="text-center mb-10 frenzzo-fade-up">
-          <FrenzzoLogo size="xl" />
-          <div className="h-px bg-[#ff4500] mx-auto mt-4 mb-4" style={{width:'100px',opacity:.9}} />
-          <p className="text-xs tracking-[0.28em] uppercase text-[#ff4500] font-medium">
-            Sua moto. Seu preço. Sem complicação.
-          </p>
-        </div>
-
-        {/* Cards de tipo */}
-        <div className="space-y-4 frenzzo-fade-up frenzzo-delay-1">
-          <p className="text-center text-white font-bold text-lg mb-1">Bem-vindo de volta</p>
-          <p className="text-center text-gray-500 text-sm mb-5">Como você quer entrar?</p>
-          {Object.entries(TIPO_INFO).map(([t, info]) => (
-            <button key={t} onClick={() => { setTipo(t); setErr(''); }}
-              className="w-full text-left p-5 rounded-2xl border-2 border-white/10 hover:border-[#ff4500] transition-all group"
-              style={{background:'rgba(255,255,255,0.05)'}}>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#ff4500]/20 flex items-center justify-center text-2xl group-hover:bg-[#ff4500]/30 transition-colors flex-shrink-0">
-                  {info.icon}
-                </div>
-                <div className="flex-1">
-                  <p className="font-bold text-white text-base">{info.label}</p>
-                  <p className="text-gray-400 text-xs mt-0.5 leading-snug">{info.desc}</p>
-                </div>
-                <span className="text-gray-600 group-hover:text-[#ff4500] text-xl transition-colors">›</span>
-              </div>
-            </button>
-          ))}
-        </div>
-
-        {/* Link cadastro */}
-        <p className="text-center text-gray-500 text-sm mt-8 frenzzo-fade-in frenzzo-delay-2">
-          Não tem conta?{' '}
-          <button onClick={onGoRegister} className="text-[#ff4500] font-semibold hover:underline">Cadastre-se</button>
-        </p>
-
-        {/* PWA install */}
-        {installEvt && !installed && (
-          <button onClick={handleInstall}
-            className="mt-5 w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-semibold text-white"
-            style={{background:'rgba(255,69,0,0.15)',border:'1px solid rgba(255,69,0,0.3)'}}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ff4500" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2v13M7 11l5 5 5-5"/><path d="M3 18h18v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2z"/>
-            </svg>
-            Instalar app no celular
-          </button>
-        )}
-        {installed && <p className="mt-4 text-center text-xs text-[#ff4500]">✓ App instalado!</p>}
-      </div>
-    </div>
-  );
-
-  // ── Tela 2: formulário de login (tipo já escolhido) ────────
   const info = TIPO_INFO[tipo];
   const demosVendedor = [
     ['Lucas · Vendedor','lucas@nortmotos.com','123456'],
@@ -369,13 +373,16 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
         </div>
 
         <div className="bg-white rounded-3xl shadow-2xl p-8 frenzzo-fade-up frenzzo-delay-1">
-          {/* Cabeçalho com tipo selecionado */}
-          <div className="flex items-center gap-3 mb-6">
-            <button onClick={() => { setTipo(null); setErr(''); setEmail(''); setSenha(''); }}
-              className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0">←</button>
-            <div className="flex items-center gap-2">
-              <span className="text-xl">{info.icon}</span>
-              <h2 className="text-lg font-bold text-[#0a0a0a]">Entrar como {info.label}</h2>
+          {/* Tab toggle comprador / vendedor */}
+          <div className="mb-6">
+            <h2 className="text-center font-bold text-[#0a0a0a] text-lg mb-4">Entrar na FRENZZO</h2>
+            <div className="flex rounded-xl overflow-hidden border border-gray-200">
+              {Object.entries(TIPO_INFO).map(([t, inf]) => (
+                <button key={t} onClick={() => { setTipo(t); setErr(''); }}
+                  className={`flex-1 py-2.5 text-sm font-bold flex items-center justify-center gap-1.5 transition-colors ${tipo === t ? 'bg-[#ff4500] text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <span>{inf.icon}</span>{inf.label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -463,6 +470,11 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
           </button>
         )}
         {installed && <p className="mt-4 text-center text-xs text-[#ff4500]">✓ App instalado!</p>}
+        {onGoPublic && (
+          <button onClick={onGoPublic} className="w-full text-center text-gray-600 hover:text-gray-300 text-xs mt-4 transition-colors">
+            Navegar pela vitrine sem criar conta →
+          </button>
+        )}
       </div>
     </div>
   );
@@ -473,7 +485,7 @@ const LoginPage = ({ onLogin, onGoRegister, onGoRegisterGoogle }) => {
 // ══════════════════════════════════════════════════════════════
 const RegisterPage = ({ onBack, onRegistered, googleData }) => {
   const viaGoogle  = !!googleData;
-  const [tipo, setTipo] = useState(null); // null | 'comprador' | 'vendedor'
+  const [tipo, setTipo] = useState('comprador'); // 'comprador' | 'vendedor'
   const [f, setF]  = useState({
     nome: googleData?.nome||'', cpf:'', email: googleData?.email||'',
     senha: viaGoogle?'___GOOGLE___':'', tel:'', dataNasc:'', codConc:'',
@@ -534,61 +546,32 @@ const RegisterPage = ({ onBack, onRegistered, googleData }) => {
       mustChangePassword:false,
     };
     LS.saveUsers([...users,novoUser]);
+    FS.saveUser(novoUser);
     setOk('Conta criada! Redirecionando...');
     setTimeout(()=>{ LS.saveSession(novoUser); onRegistered(novoUser); },1200);
   };
 
-  // ── Tela 1: escolha do tipo ────────────────────────────────
-  if (!tipo) return (
-    <div className="min-h-screen flex flex-col items-center justify-center p-4" style={{background:'#0a0a0a'}}>
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-10 frenzzo-fade-up">
-          <FrenzzoLogo size="lg" />
-          <p className="mt-4 text-white text-lg font-bold">Crie sua conta</p>
-          <p className="text-gray-500 text-sm mt-1">Qual é o seu perfil?</p>
-        </div>
-        <div className="space-y-4 frenzzo-fade-up frenzzo-delay-1">
-          {[
-            { t:'comprador', icon:'🛒', title:'Sou Comprador', desc:'Quero encontrar uma moto seminova com o melhor preço.' },
-            { t:'vendedor',  icon:'🏪', title:'Sou Vendedor',  desc:'Trabalho em uma concessionária parceira FRENZZO.' },
-          ].map(({t,icon,title,desc})=>(
-            <button key={t} onClick={()=>setTipo(t)}
-              className="w-full text-left p-5 rounded-2xl border-2 border-white/10 hover:border-[#ff4500] transition-all group"
-              style={{background:'rgba(255,255,255,0.05)'}}>
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-[#ff4500]/20 flex items-center justify-center text-2xl group-hover:bg-[#ff4500]/30 transition-colors flex-shrink-0">
-                  {icon}
-                </div>
-                <div>
-                  <p className="font-bold text-white text-base">{title}</p>
-                  <p className="text-gray-400 text-xs mt-0.5 leading-snug">{desc}</p>
-                </div>
-                <span className="ml-auto text-gray-600 group-hover:text-[#ff4500] text-xl transition-colors">›</span>
-              </div>
-            </button>
-          ))}
-        </div>
-        <button onClick={onBack} className="w-full text-center text-gray-500 text-sm mt-6 hover:text-gray-300 transition-colors">
-          ← Voltar ao login
-        </button>
-      </div>
-    </div>
-  );
-
-  // ── Tela 2: formulário por tipo ───────────────────────────
-  const tipoLabel = tipo==='comprador'?'Comprador':'Vendedor';
-  const tipoIcon  = tipo==='comprador'?'🛒':'🏪';
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 overflow-y-auto" style={{background:'#0a0a0a'}}>
       <div className="w-full max-w-sm py-6">
         <div className="text-center mb-6 frenzzo-fade-up"><FrenzzoLogo size="lg" /></div>
         <div className="bg-white rounded-3xl shadow-2xl p-7">
-          <div className="flex items-center gap-3 mb-5">
-            <button onClick={()=>setTipo(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">←</button>
-            <div className="flex items-center gap-2">
-              <span>{tipoIcon}</span>
-              <h2 className="text-lg font-bold text-[#0a0a0a]">{tipoLabel} — Criar conta</h2>
+          <div className="mb-5">
+            <div className="flex items-center gap-2 mb-4">
+              <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-xl leading-none flex-shrink-0">←</button>
+              <h2 className="text-lg font-bold text-[#0a0a0a]">Criar conta FRENZZO</h2>
+            </div>
+            <div className="flex rounded-xl overflow-hidden border border-gray-200">
+              {[
+                {t:'comprador', icon:'🛒', label:'Comprador'},
+                {t:'vendedor',  icon:'🏪', label:'Vendedor'},
+              ].map(({t, icon, label}) => (
+                <button key={t} onClick={() => { setTipo(t); setErros({}); }}
+                  className={`flex-1 py-2.5 text-sm font-bold flex items-center justify-center gap-1.5 transition-colors ${tipo === t ? 'bg-[#ff4500] text-white' : 'bg-white text-gray-500 hover:bg-gray-50'}`}>
+                  <span>{icon}</span>{label}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -837,7 +820,13 @@ const RowD = ({ l, v, vc='text-gray-700' }) => (
 // ── Assinatura digital ─────────────────────────────────────────
 const SigPad = ({ onSign }) => {
   const ref = useRef(); const drawing = useRef(false); const [signed,setSigned] = useState(false);
-  const pos = (e) => { const r=ref.current.getBoundingClientRect(); const s=e.touches?e.touches[0]:e; return [s.clientX-r.left,s.clientY-r.top]; };
+  const pos = (e) => {
+    const r = ref.current.getBoundingClientRect();
+    const scaleX = ref.current.width / r.width;
+    const scaleY = ref.current.height / r.height;
+    const s = e.touches ? e.touches[0] : e;
+    return [(s.clientX - r.left) * scaleX, (s.clientY - r.top) * scaleY];
+  };
   const start = (e) => { drawing.current=true; const ctx=ref.current.getContext('2d'); ctx.beginPath(); const [x,y]=pos(e); ctx.moveTo(x,y); };
   const move  = (e) => { if(!drawing.current)return; e.preventDefault(); const ctx=ref.current.getContext('2d'); ctx.lineWidth=2;ctx.lineCap='round';ctx.strokeStyle='#0a0a0a'; const [x,y]=pos(e); ctx.lineTo(x,y);ctx.stroke();ctx.beginPath();ctx.moveTo(x,y); setSigned(true);onSign(true); };
   const stop  = () => { drawing.current=false; };
@@ -913,9 +902,11 @@ const MotoImg = ({ m, large }) => {
 };
 
 // ── Chat de Ofertas por Moto ──────────────────────────────────
-const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) => {
+const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false, publicMode = false, onNeedLogin = () => {} }) => {
   const [texto,   setTexto]   = useState('');
   const [selComp, setSelComp] = useState(null); // admin: compradorId selecionado
+  const chatRef = useRef();
+  useEffect(() => { if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight; });
 
   const key      = String(motoId);
   const motoChat = (chats[key]) || {};
@@ -923,6 +914,19 @@ const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) =>
   const isComp   = user.perfil === 'comprador';
   const isVendNormal = user.perfil === 'vendedor' && !modoComprador;
   if (isVendNormal) return null;
+
+  if (publicMode) return (
+    <div className="mt-5 border-t border-slate-100 pt-4">
+      <div className="bg-orange-50 border border-orange-100 rounded-xl p-4 text-center">
+        <p className="text-sm font-semibold text-[#0a0a0a] mb-1">Gostou desta moto?</p>
+        <p className="text-xs text-gray-500 mb-3">Entre para enviar uma oferta ou tirar dúvidas com a FRENZZO</p>
+        <button onClick={onNeedLogin}
+          className="bg-[#ff4500] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-[#e03d00] transition-colors">
+          Entrar na FRENZZO
+        </button>
+      </div>
+    </div>
+  );
 
   const ts = () => new Date().toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
 
@@ -932,7 +936,7 @@ const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) =>
     const prev = motoChat[cid] || [];
     const nova = { autor: user.nome, texto: texto.trim(), hora: ts(), isAdmin: asAdmin };
     const updChat = { ...motoChat, [cid]: [...prev, nova] };
-    setChats(p => { const n = { ...p, [key]: updChat }; LS.saveChats(n); return n; });
+    setChats(p => { const n = { ...p, [key]: updChat }; LS.saveChats(n); FS.saveChat(n); return n; });
     setTexto('');
   };
 
@@ -963,7 +967,7 @@ const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) =>
     return (
       <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="text-sm font-semibold text-gray-700 mb-2">💬 Fale com a FRENZZO</p>
-        <div className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 overflow-y-auto mb-2" style={{minHeight:'80px',maxHeight:'160px'}}>
+        <div ref={chatRef} className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 overflow-y-auto mb-2" style={{minHeight:'80px',maxHeight:'160px'}}>
           {msgs.length === 0
             ? <p className="text-gray-300 text-xs text-center py-3">Nenhuma mensagem. Envie sua oferta!</p>
             : msgs.map((m,i) => <Bubble key={i} msg={m} />)}
@@ -983,9 +987,9 @@ const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) =>
           <div className="flex items-center gap-2 mb-2">
             <button onClick={() => { setSelComp(null); setTexto(''); }}
               className="text-gray-400 hover:text-gray-600 text-sm font-semibold">← Voltar</button>
-            <p className="text-sm font-semibold text-gray-700">Comprador #{selComp}</p>
+            <p className="text-sm font-semibold text-gray-700">{motoChat[selComp]?.[0]?.autor || `Comprador #${String(selComp).slice(-4)}`}</p>
           </div>
-          <div className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 overflow-y-auto mb-2" style={{minHeight:'80px',maxHeight:'180px'}}>
+          <div ref={chatRef} className="bg-slate-50 rounded-xl p-3 flex flex-col gap-2 overflow-y-auto mb-2" style={{minHeight:'80px',maxHeight:'180px'}}>
             {msgs.map((m,i) => <Bubble key={i} msg={m} />)}
           </div>
           <InputRow onSend={() => enviar(selComp, true)} placeholder="Responder..." dark />
@@ -1001,7 +1005,7 @@ const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) =>
             <button key={cid} onClick={() => setSelComp(cid)}
               className="w-full flex items-center justify-between bg-slate-50 hover:bg-slate-100 rounded-xl px-4 py-3 mb-2 text-left transition-colors">
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800">Comprador #{cid}</p>
+                <p className="text-sm font-medium text-gray-800">{msgs[0]?.autor || `Comprador #${cid.slice(-4)}`}</p>
                 <p className="text-xs text-gray-400 truncate">{msgs[msgs.length-1]?.texto}</p>
               </div>
               <span className="ml-3 bg-[#ff4500] text-white text-xs px-2 py-0.5 rounded-full font-bold flex-shrink-0">{msgs.length}</span>
@@ -1030,7 +1034,7 @@ const ChatOferta = ({ motoId, user, chats, setChats, modoComprador = false }) =>
 };
 
 // ── Modal detalhe moto ─────────────────────────────────────────
-const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = false, chats = {}, setChats = ()=>{} }) => {
+const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = false, chats = {}, setChats = ()=>{}, publicMode = false, onNeedLogin = ()=>{} }) => {
   const [contrato,setContrato]   = useState(null);
   const [interesseOpen,setInt]   = useState(false);
   const [compForm,setComp]       = useState({nome:'',cpf:'',fone:''});
@@ -1145,7 +1149,7 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
             {m.status==='concluido' && <p className="text-emerald-600 font-semibold text-sm self-center">✓ Negociação concluída</p>}
           </div>
 
-          <ChatOferta motoId={m.id} user={user} chats={chats} setChats={setChats} modoComprador={modoComprador} />
+          <ChatOferta motoId={m.id} user={user} chats={chats} setChats={setChats} modoComprador={modoComprador} publicMode={publicMode} onNeedLogin={onNeedLogin} />
         </div>
       </div>
 
@@ -1177,27 +1181,40 @@ const MotoModal = ({ m, user, onClose, onAvancar, onConcluir, modoComprador = fa
 };
 
 // ── VITRINE ────────────────────────────────────────────────────
-const Vitrine = ({ motos, user, onAvancar, onConcluir, chats = {}, setChats = ()=>{} }) => {
+const Vitrine = ({ motos, user, onAvancar, onConcluir, chats = {}, setChats = ()=>{}, publicMode = false, onNeedLogin = ()=>{} }) => {
   const [sel, setSel] = useState(null);
   const [busca, setBusca] = useState('');
   const [filtSt, setFilt] = useState('');
   const [modoComprador, setModoComprador] = useState(false);
+  const [showFiltros, setShowFiltros] = useState(false);
+  const [filtPrecoMin, setFiltPrecoMin] = useState('');
+  const [filtPrecoMax, setFiltPrecoMax] = useState('');
+  const [filtAnoMin,   setFiltAnoMin]   = useState('');
+  const [filtAnoMax,   setFiltAnoMax]   = useState('');
+  const [filtKmMax,    setFiltKmMax]    = useState('');
 
   const isVendedor = user.perfil === 'vendedor';
+  const isCompradorView = user.perfil === 'comprador' || modoComprador || publicMode;
 
   const list = motos.filter(m => {
     const porPerfil = isVendedor && !modoComprador ? m.capId === user.id : true;
     const porBusca = !busca || `${m.vei.marca} ${m.vei.modelo}`.toLowerCase().includes(busca.toLowerCase());
-    const porStatus = !filtSt || m.status === filtSt;
-    return porPerfil && porBusca && porStatus;
+    const porStatus = filtSt ? m.status === filtSt : (isCompradorView ? m.status === 'disponivel' : true);
+    const porPrecoMin = !filtPrecoMin || m.precoFinal >= parseFloat(filtPrecoMin);
+    const porPrecoMax = !filtPrecoMax || m.precoFinal <= parseFloat(filtPrecoMax);
+    const porAnoMin = !filtAnoMin || m.vei.ano >= parseInt(filtAnoMin);
+    const porAnoMax = !filtAnoMax || m.vei.ano <= parseInt(filtAnoMax);
+    const porKm = !filtKmMax || m.vei.km <= parseInt(filtKmMax);
+    return porPerfil && porBusca && porStatus && porPrecoMin && porPrecoMax && porAnoMin && porAnoMax && porKm;
   });
+  const filtrosAtivos = [filtPrecoMin, filtPrecoMax, filtAnoMin, filtAnoMax, filtKmMax].filter(Boolean).length;
   return (
     <div>
       <div className="mb-5">
         <div className="flex items-center gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-[#0a0a0a]">
-              {isVendedor && !modoComprador ? 'Minhas Motos' : 'Vitrine Completa'}
+              {isVendedor && !modoComprador ? 'Minhas Motos' : user.perfil === 'comprador' ? 'Vitrine FRENZZO' : 'Vitrine Completa'}
             </h1>
             <p className="text-gray-400 text-sm">
               {isVendedor && !modoComprador
@@ -1219,15 +1236,48 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir, chats = {}, setChats = ()
           )}
         </div>
       </div>
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-3">
         <input className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]" placeholder="🔍 Buscar modelo..." value={busca} onChange={e=>setBusca(e.target.value)} />
-        <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm" value={filtSt} onChange={e=>setFilt(e.target.value)}>
-          <option value="">Todos os status</option>
-          <option value="disponivel">Disponível</option>
-          <option value="em_negociacao">Em Negociação</option>
-          <option value="concluido">Concluído</option>
-        </select>
+        {!isCompradorView && (
+          <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm" value={filtSt} onChange={e=>setFilt(e.target.value)}>
+            <option value="">Todos os status</option>
+            <option value="disponivel">Disponível</option>
+            <option value="em_negociacao">Em Negociação</option>
+            <option value="concluido">Concluído</option>
+          </select>
+        )}
+        <button onClick={() => setShowFiltros(!showFiltros)}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium border transition-colors ${showFiltros || filtrosAtivos > 0 ? 'bg-[#ff4500] text-white border-[#ff4500]' : 'border-gray-200 text-gray-600 hover:border-[#ff4500] hover:text-[#ff4500]'}`}>
+          ⚙ Filtros {filtrosAtivos > 0 && <span className="bg-white/30 text-xs font-bold px-1.5 py-0.5 rounded-full">{filtrosAtivos}</span>}
+        </button>
       </div>
+      {showFiltros && (
+        <div className="mb-5 bg-white rounded-2xl border border-slate-100 shadow-sm p-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              ['Preço mín. (R$)', filtPrecoMin, setFiltPrecoMin, 'Ex: 8000'],
+              ['Preço máx. (R$)', filtPrecoMax, setFiltPrecoMax, 'Ex: 20000'],
+              ['Ano mín.',        filtAnoMin,   setFiltAnoMin,   '2000'],
+              ['Ano máx.',        filtAnoMax,   setFiltAnoMax,   '2026'],
+              ['KM máx.',         filtKmMax,    setFiltKmMax,    'Ex: 30000'],
+            ].map(([label, val, set, ph]) => (
+              <div key={label}>
+                <label className="text-xs font-semibold text-gray-400 uppercase tracking-wide">{label}</label>
+                <input type="number" className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-[#ff4500]"
+                  placeholder={ph} value={val} onChange={e => set(e.target.value)} />
+              </div>
+            ))}
+          </div>
+          {filtrosAtivos > 0 && (
+            <div className="mt-3 flex justify-end">
+              <button onClick={() => { setFiltPrecoMin(''); setFiltPrecoMax(''); setFiltAnoMin(''); setFiltAnoMax(''); setFiltKmMax(''); }}
+                className="text-xs text-[#ff4500] font-semibold hover:underline">
+                ✕ Limpar todos os filtros
+              </button>
+            </div>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
         {list.map(m=>(
           <div key={m.id} onClick={()=>setSel(m)} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all">
@@ -1239,12 +1289,12 @@ const Vitrine = ({ motos, user, onAvancar, onConcluir, chats = {}, setChats = ()
                 <p className="text-2xl font-bold text-[#0a0a0a]">{R(m.precoFinal)}</p>
                 <p className="text-xs text-gray-400">Preço ao comprador</p>
               </div>
-              <p className="text-xs text-gray-400 mt-1">Captação: {m.cap}</p>
+              {!isCompradorView && <p className="text-xs text-gray-400 mt-1">Captação: {m.cap}</p>}
             </div>
           </div>
         ))}
       </div>
-      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} modoComprador={modoComprador} chats={chats} setChats={setChats} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} />}
+      {sel && <MotoModal m={motos.find(x=>x.id===sel.id)} user={user} modoComprador={modoComprador} chats={chats} setChats={setChats} onClose={()=>setSel(null)} onAvancar={onAvancar} onConcluir={onConcluir} publicMode={publicMode} onNeedLogin={onNeedLogin} />}
     </div>
   );
 };
@@ -1368,6 +1418,8 @@ const Cadastro = ({ user, onSave }) => {
     // Melhoria 5: laudo
     const laudoIncompleto = LAUDO_ITEMS.some(i=>!laudo[i.key]);
     if (laudoIncompleto) e.laudo='Preencha todos os itens do laudo.';
+    const laudoRuim = LAUDO_ITEMS.filter(i=>laudo[i.key]==='Ruim').map(i=>i.label);
+    if (laudoRuim.length>0 && !e.laudo) e.laudo=`Itens em estado "Ruim" impedem o cadastro: ${laudoRuim.join(', ')}. O veículo precisa de revisão.`;
     const laudoAtencao = LAUDO_ITEMS.filter(i=>laudo[i.key]==='Requer Atenção').map(i=>i.label);
     if (laudoAtencao.length>0) e.laudoAtencao=`Item(ns) com atenção necessária: ${laudoAtencao.join(', ')}. Resolva antes de cadastrar.`;
 
@@ -1375,6 +1427,7 @@ const Cadastro = ({ user, onSave }) => {
     const fotosFaltando = fotos.map((f,i)=>!f?FOTO_LABELS[i]:null).filter(Boolean);
     if (fotosFaltando.length>0) e.fotos=`Fotos obrigatórias faltando: ${fotosFaltando.join(', ')}.`;
 
+    if (!fipe.mdCod && !fipe.fipeErr) e.modelo='Selecione o modelo do veículo.';
     if (!ano) e.ano='Selecione o ano do veículo.';
     if (!pd || pdNum<=0) e.pd='Informe o valor desejado.';
     if (fipeExcede) e.pd=`O preço final ficaria acima do limite permitido. O valor máximo que você pode receber é ${R(pdMax)} para manter o veículo competitivo no mercado.`;
@@ -1457,11 +1510,13 @@ const Cadastro = ({ user, onSave }) => {
             {/* Modelo via FIPE (Honda) */}
             <div>
               <label className="text-xs text-gray-500 font-medium">Modelo *</label>
-              <select className={sel} value={fipe.mdCod} onChange={e=>fipe.setMdCod(e.target.value)}
+              <select className={`${sel} ${erros.modelo?'border-red-400':''}`}
+                value={fipe.mdCod} onChange={e=>{fipe.setMdCod(e.target.value);setErros(p=>({...p,modelo:''}));}}
                 disabled={!fipe.mCod || fipe.modelos.length===0}>
                 <option value="">{fipe.mCod?'Selecione…':'Aguardando FIPE…'}</option>
                 {fipe.modelos.map(m=><option key={m.codigo} value={m.codigo}>{m.nome}</option>)}
               </select>
+              {erros.modelo && <p className="text-red-500 text-xs mt-1">{erros.modelo}</p>}
             </div>
             {/* Ano: select estático 2026→2000 */}
             <div>
@@ -1724,12 +1779,16 @@ const Comissoes = ({ motos, user }) => {
 
 // ── RELATÓRIO ──────────────────────────────────────────────────
 const Relatorio = ({ motos, user }) => {
+  const agora     = new Date();
+  const mesLabel  = agora.toLocaleDateString('pt-BR',{month:'long',year:'numeric'});
+  const mesLabelCap = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
+  const ultimoDia = new Date(agora.getFullYear(), agora.getMonth()+1, 0).toLocaleDateString('pt-BR');
   const conc=motos.filter(m=>m.status==='concluido');
   const vol=conc.reduce((s,m)=>s+m.precoFinal,0), com=conc.reduce((s,m)=>s+m.comissaoVenda+m.bonus,0), app=conc.reduce((s,m)=>s+m.lucroApp,0);
   return (
     <div>
       <div className="mb-6 flex justify-between items-start flex-wrap gap-3">
-        <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Relatório Mensal</h1><p className="text-gray-400 text-sm">Janeiro 2024 — {user.conc||'Todas as concessionárias'}</p></div>
+        <div><h1 className="text-2xl font-bold text-[#0a0a0a]">Relatório Mensal</h1><p className="text-gray-400 text-sm">{mesLabelCap} — {user.conc||'Todas as concessionárias'}</p></div>
         <button className="bg-[#0a0a0a] text-white px-4 py-2 rounded-xl text-sm hover:bg-[#1a1a1a]">⬇ Exportar PDF</button>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -1767,10 +1826,10 @@ const Relatorio = ({ motos, user }) => {
       </div>
       {user.perfil==='super_admin' && (
         <div className="bg-[#0a0a0a] rounded-2xl p-6 text-white">
-          <h3 className="font-bold text-xl mb-1">Fatura — NortMotos — Janeiro 2024</h3>
+          <h3 className="font-bold text-xl mb-1">Fatura — {user.conc||'FRENZZO'} — {mesLabelCap}</h3>
           <p className="text-blue-300 text-sm mb-4">Intermediação de {conc.length} veículo(s)</p>
           <p className="text-4xl font-bold text-[#ff4500]">{R(app)}</p>
-          <p className="text-blue-300 text-sm mt-1">Vencimento: 31/01/2024</p>
+          <p className="text-blue-300 text-sm mt-1">Vencimento: {ultimoDia}</p>
         </div>
       )}
     </div>
@@ -1929,14 +1988,16 @@ const AlterarSenhaModal = ({ user, onClose, onSaved }) => {
   const [nova,setNova]     = useState('');
   const [conf,setConf]     = useState('');
   const [err,setErr]       = useState('');
+  const isGoogle = user.senha === '___GOOGLE___' || !!user.googleId;
   const inp = (e) => `w-full border ${e?'border-red-400 bg-red-50':'border-gray-200'} rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#ff4500]`;
   const handle = () => {
-    if (atual !== user.senha) { setErr('Senha atual incorreta.'); return; }
+    if (!isGoogle && atual !== user.senha) { setErr('Senha atual incorreta.'); return; }
     if (nova.length < 6)       { setErr('Nova senha deve ter ao menos 6 caracteres.'); return; }
     if (nova !== conf)          { setErr('As senhas não coincidem.'); return; }
     const updated = { ...user, senha: nova, mustChangePassword: false };
     LS.saveUsers((LS.getUsers()||[]).map(u => u.id===user.id ? updated : u));
     LS.saveSession(updated);
+    FS.saveUser(updated);
     onSaved(updated);
     onClose();
   };
@@ -1945,8 +2006,9 @@ const AlterarSenhaModal = ({ user, onClose, onSaved }) => {
       <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={e=>e.stopPropagation()}>
         <h3 className="font-bold text-[#0a0a0a] text-lg mb-5">Alterar Senha</h3>
         <div className="space-y-3">
-          <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha atual</label>
-            <input className={inp(false)} type="password" placeholder="••••••••" value={atual} onChange={e=>setAtual(e.target.value)} /></div>
+          {isGoogle && <p className="text-sm text-blue-600 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">Conta Google — defina uma senha para acesso direto por e-mail.</p>}
+          {!isGoogle && <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Senha atual</label>
+            <input className={inp(false)} type="password" placeholder="••••••••" value={atual} onChange={e=>setAtual(e.target.value)} /></div>}
           <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Nova senha</label>
             <input className={inp(false)} type="password" placeholder="••••••••" value={nova} onChange={e=>setNova(e.target.value)} /></div>
           <div><label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Confirmar nova senha</label>
@@ -2007,6 +2069,7 @@ const PerfilPage = ({ user, onUpdate, onLogout }) => {
   const [saved,setSaved]     = useState(false);
   const [showSenha,setShowS] = useState(false);
   const [showExc,setShowExc] = useState(false);
+  const [saveErr,setSaveErr] = useState('');
   const fotoRef = useRef();
 
   const handleFoto = (e) => {
@@ -2026,9 +2089,12 @@ const PerfilPage = ({ user, onUpdate, onLogout }) => {
   };
 
   const saveProfile = () => {
+    if (!nome.trim() || nome.trim().split(' ').length < 2) { setSaveErr('Informe nome completo (nome e sobrenome).'); return; }
+    setSaveErr('');
     const updated = { ...user, nome:nome.trim(), tel, dataNasc, foto };
     LS.saveUsers((LS.getUsers()||[]).map(u => u.id===user.id ? updated : u));
     LS.saveSession(updated);
+    FS.saveUser(updated);
     onUpdate(updated);
     setEditing(false);
     setSaved(true);
@@ -2090,9 +2156,10 @@ const PerfilPage = ({ user, onUpdate, onLogout }) => {
             ? <input className={inp+" mt-1"} type="date" value={dataNasc} onChange={e=>setNasc(e.target.value)} />
             : <p className={roVal}>{dataNasc ? new Date(dataNasc+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</p>}
         </div>
+        {saveErr && <p className="text-red-500 text-xs bg-red-50 border border-red-100 rounded-xl px-3 py-2">{saveErr}</p>}
         {/* Somente leitura */}
         <div><p className={roLabel}>E-mail</p><p className={roVal}>{user.email}</p></div>
-        <div><p className={roLabel}>Código da Concessionária</p><p className={roVal}>{user.codConc}</p></div>
+        {user.perfil !== 'comprador' && <div><p className={roLabel}>Código da Concessionária</p><p className={roVal}>{user.codConc}</p></div>}
         <div><p className={roLabel}>Membro desde</p>
           <p className={roVal}>{user.dataCadastro ? new Date(user.dataCadastro+'T12:00:00').toLocaleDateString('pt-BR') : '—'}</p></div>
       </div>
@@ -2260,8 +2327,10 @@ const SuporteWidget = ({ user }) => {
   const enviar = () => {
     if (!msg.trim()) return;
     const lst = (() => { try { return JSON.parse(localStorage.getItem('nc_suporte') || '[]'); } catch { return []; } })();
-    lst.push({ nome, email, mensagem: msg.trim(), data: new Date().toISOString(), userId: user?.id });
+    const novaMsg = { nome, email, mensagem: msg.trim(), data: new Date().toISOString(), userId: user?.id };
+    lst.push(novaMsg);
     localStorage.setItem('nc_suporte', JSON.stringify(lst));
+    FS.saveSuporteMsg(novaMsg);
     setMsg('');
     setEnviado(true);
     setTimeout(() => setEnviado(false), 4000);
@@ -2349,6 +2418,62 @@ const SuporteWidget = ({ user }) => {
 };
 
 // ══════════════════════════════════════════════════════════════
+// VITRINE PÚBLICA — acesso sem login
+// ══════════════════════════════════════════════════════════════
+const PublicApp = ({ motos, onLogin, onRegister }) => (
+  <div className="min-h-screen bg-slate-50">
+    <header className="sticky top-0 z-30 shadow-xl" style={{background:'#0a0a0a'}}>
+      <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <FrenzzoLogo size="sm" />
+        <p className="hidden md:block text-xs tracking-[0.25em] uppercase text-blue-300 font-medium flex-1 text-center">
+          Sua moto. Seu preço. Sem complicação.
+        </p>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button onClick={onLogin}
+            className="text-blue-200 hover:text-white text-sm font-medium px-4 py-2 rounded-xl hover:bg-white/10 transition-colors">
+            Entrar
+          </button>
+          <button onClick={onRegister}
+            className="bg-[#ff4500] text-white text-sm font-semibold px-4 py-2 rounded-xl hover:bg-[#e03d00] transition-colors">
+            Criar conta
+          </button>
+        </div>
+      </div>
+    </header>
+
+    {/* Hero */}
+    <div style={{background:'linear-gradient(135deg,#0a0a0a 0%,#1a0500 100%)'}} className="py-12 px-4 text-center">
+      <p className="text-white font-black text-3xl mb-2 leading-tight">Motos seminovas com<br/>preço garantido pela FIPE</p>
+      <p className="text-gray-400 text-sm mb-7 max-w-md mx-auto">Consignação segura em concessionárias Honda parceiras. Você entrega, a gente vende pelo melhor preço.</p>
+      <div className="flex flex-wrap justify-center gap-3">
+        <button onClick={onRegister}
+          className="bg-[#ff4500] text-white font-bold px-7 py-3 rounded-2xl hover:bg-[#e03d00] transition-colors text-sm shadow-lg">
+          Quero vender minha moto
+        </button>
+        <button onClick={onLogin}
+          className="text-white border border-white/25 font-medium px-6 py-3 rounded-2xl hover:bg-white/10 transition-colors text-sm">
+          Já tenho conta →
+        </button>
+      </div>
+    </div>
+
+    <main className="max-w-7xl mx-auto px-4 py-6 pb-16">
+      <Vitrine
+        motos={motos}
+        user={{perfil:'comprador', id:0, nome:'', foto:null}}
+        onAvancar={()=>{}}
+        onConcluir={()=>{}}
+        chats={{}}
+        setChats={()=>{}}
+        publicMode={true}
+        onNeedLogin={onLogin}
+      />
+    </main>
+    <SuporteWidget user={null} />
+  </div>
+);
+
+// ══════════════════════════════════════════════════════════════
 // APP PRINCIPAL — gate de autenticação
 // ══════════════════════════════════════════════════════════════
 const App = () => {
@@ -2361,31 +2486,65 @@ const App = () => {
   const [toast, setToast] = useState(null);
   const [chats, setChats] = useState(() => LS.getChats());
 
-  // ── Inicialização: carrega tudo do localStorage ──────────────
+  // ── Inicialização: carrega do Firestore (com fallback localStorage) ─
   useEffect(() => {
-    // Força atualização das contas demo (garante senha 123456 sempre)
-    const stored = LS.getUsers();
-    if (stored) {
-      const merged = DEMO_ACCOUNTS.map(demo => {
-        const existing = stored.find(u => u.id === demo.id);
-        // mantém dados extras de usuários cadastrados manualmente
-        return existing ? { ...existing, senha: demo.senha } : demo;
-      });
-      const novos = stored.filter(u => u.id > 4);
-      LS.saveUsers([...merged, ...novos]);
-    } else {
-      LS.saveUsers(DEMO_ACCOUNTS);
-    }
-    setMotos(LS.getMotos() || MOTOS0);
-    setConcs(LS.getConcs() || CONCS0);
-    const sess = LS.getSession();
-    // Restaura tema escuro se o usuário tinha preferência salva
-    if (sess?.darkMode) document.body.classList.add('frenzzo-dark');
-    // Splash mínimo de 2s para impacto da marca
-    setTimeout(() => {
-      if (sess) { setUser(sess); setAuth('app'); }
-      else setAuth('login');
-    }, 2000);
+    const init = async () => {
+      const [fsMotos, fsUsers, fsConcs, fsChats] = await Promise.all([
+        FS.getMotos(), FS.getUsers(), FS.getConcs(), FS.getChats()
+      ]);
+
+      // USERS
+      const mergeUsers = (base) => {
+        const merged = DEMO_ACCOUNTS.map(demo => {
+          const ex = base.find(u => u.id === demo.id);
+          return ex ? { ...ex, senha: demo.senha } : demo;
+        });
+        return [...merged, ...base.filter(u => u.id > 4)];
+      };
+      if (fsUsers && fsUsers.length > 0) {
+        LS.saveUsers(mergeUsers(fsUsers));
+      } else {
+        const stored = LS.getUsers();
+        const users = stored ? mergeUsers(stored) : DEMO_ACCOUNTS;
+        LS.saveUsers(users);
+        FS.saveUsers(users); // migra localStorage → Firestore
+      }
+
+      // MOTOS
+      const motos = fsMotos || LS.getMotos() || MOTOS0;
+      if (!fsMotos) FS.saveMotos(motos);
+      setMotos(motos); LS.saveMotos(motos);
+
+      // CONCS
+      const concs = fsConcs || LS.getConcs() || CONCS0;
+      if (!fsConcs) FS.saveConcs(concs);
+      setConcs(concs); LS.saveConcs(concs);
+
+      // CHATS
+      const chats = fsChats || LS.getChats();
+      if (chats) setChats(chats);
+
+      const sess = LS.getSession();
+      if (sess?.darkMode) document.body.classList.add('frenzzo-dark');
+      setTimeout(() => {
+        if (sess) { setUser(sess); setAuth('app'); }
+        else setAuth('public');
+      }, 2000);
+    };
+
+    init().catch(() => {
+      // Fallback offline
+      const stored = LS.getUsers();
+      if (stored) {
+        const merged = DEMO_ACCOUNTS.map(d => { const e=stored.find(u=>u.id===d.id); return e?{...e,senha:d.senha}:d; });
+        LS.saveUsers([...merged, ...stored.filter(u=>u.id>4)]);
+      } else { LS.saveUsers(DEMO_ACCOUNTS); }
+      setMotos(LS.getMotos() || MOTOS0);
+      setConcs(LS.getConcs() || CONCS0);
+      const sess = LS.getSession();
+      if (sess?.darkMode) document.body.classList.add('frenzzo-dark');
+      setTimeout(() => { if (sess){setUser(sess);setAuth('app');}else setAuth('public'); }, 2000);
+    });
   }, []);
 
   // ── Auto-save: persiste sempre que motos, concs ou chats mudam ──
@@ -2400,9 +2559,26 @@ const App = () => {
   const handleLogout   = () => { LS.clearSession(); setUser(null); setAuth('login'); setPage('vitrine'); };
   const goRegisterGoogle = (data) => { setGoogleData(data); setAuth('register'); };
   const handleUserUpdate = (updated) => { setUser(updated); };
-  const onCadastrar    = (m) => { setMotos(p=>[...p,m]); setPage('vitrine'); notify('Moto cadastrada com sucesso!'); };
-  const onAvancar      = (id,comp) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'em_negociacao',vendId:user.id,vend:user.nome,comprador:comp}:m)); notify('Interesse registrado!'); };
-  const onConcluir     = (id) => { setMotos(p=>p.map(m=>m.id===id?{...m,status:'concluido'}:m)); notify('Negociação concluída! Comissões registradas.'); };
+  const onCadastrar = (m) => {
+    setMotos(p => { const n=[...p,m]; LS.saveMotos(n); FS.saveMoto(m); return n; });
+    setPage('vitrine'); notify('Moto cadastrada com sucesso!');
+  };
+  const onAvancar = (id, comp) => {
+    setMotos(p => {
+      const n = p.map(m => m.id===id ? {...m,status:'em_negociacao',vendId:user.id,vend:user.nome,comprador:comp} : m);
+      LS.saveMotos(n); FS.saveMoto(n.find(m=>m.id===id));
+      return n;
+    });
+    notify('Interesse registrado!');
+  };
+  const onConcluir = (id) => {
+    setMotos(p => {
+      const n = p.map(m => m.id===id ? {...m,status:'concluido'} : m);
+      LS.saveMotos(n); FS.saveMoto(n.find(m=>m.id===id));
+      return n;
+    });
+    notify('Negociação concluída! Comissões registradas.');
+  };
 
   if (authState==='loading') return (
     <div className="fixed inset-0 flex items-center justify-center splash-out" style={{background:'#0a0a0a',zIndex:9999}}>
@@ -2415,13 +2591,14 @@ const App = () => {
       </div>
     </div>
   );
-  if (authState==='login')    return <LoginPage onLogin={handleLogin} onGoRegister={()=>{setGoogleData(null);setAuth('register');}} onGoRegisterGoogle={goRegisterGoogle} />;
+  if (authState==='public')   return <PublicApp motos={motos} onLogin={()=>setAuth('login')} onRegister={()=>{setGoogleData(null);setAuth('register');}} />;
+  if (authState==='login')    return <LoginPage onLogin={handleLogin} onGoRegister={()=>{setGoogleData(null);setAuth('register');}} onGoRegisterGoogle={goRegisterGoogle} onGoPublic={()=>setAuth('public')} />;
   if (authState==='register') return <RegisterPage onBack={()=>{setGoogleData(null);setAuth('login');}} onRegistered={handleLogin} googleData={googleData} />;
   // Feature 6: força troca de senha se admin resetou
   if (user?.mustChangePassword) return <TrocaSenhaObrigatoria user={user} onDone={handleUserUpdate} />;
 
   const NAV = [
-    {k:'vitrine',        l:'Vitrine',      i:'🏍️', roles:['super_admin','gerente','vendedor']},
+    {k:'vitrine',        l:'Vitrine',      i:'🏍️', roles:['super_admin','gerente','vendedor','comprador']},
     {k:'cadastro',       l:'Cadastrar',    i:'➕', roles:['vendedor']},
     {k:'negociacoes',    l:'Negociações',  i:'📋', roles:['super_admin','gerente','vendedor']},
     {k:'comissoes',      l:'Comissões',    i:'💰', roles:['super_admin','gerente','vendedor']},
@@ -2433,7 +2610,7 @@ const App = () => {
     <div className="min-h-screen bg-slate-50">
       <header className="sticky top-0 z-30 shadow-xl" style={{background:'#0a0a0a'}}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center flex-shrink-0">
+          <div className="flex items-center flex-shrink-0 cursor-pointer" onClick={() => setPage('vitrine')}>
             <FrenzzoLogo size="sm" />
           </div>
           <nav className="hidden md:flex gap-1 flex-1 justify-center">
@@ -2500,7 +2677,7 @@ const App = () => {
       </main>
 
       {toast && (
-        <div className="fixed bottom-5 right-5 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold z-50">
+        <div className="fixed bottom-5 left-5 bg-emerald-600 text-white px-5 py-3 rounded-2xl shadow-2xl text-sm font-semibold z-50">
           ✓ {toast}
         </div>
       )}
